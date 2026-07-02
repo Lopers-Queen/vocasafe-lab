@@ -33,9 +33,11 @@ export function getCurrentUser(): User | null {
 
 export function getRoleLabel(role: UserRole): string {
   const labels: Record<UserRole, string> = {
-    admin_lab: "Admin Laboratorium",
-    auditor: "Auditor",
+    mahasiswa: "Mahasiswa",
+    dosen: "Dosen",
     teknisi: "Teknisi/Laboran",
+    kepala_lab: "Kepala Laboratorium",
+    admin: "Admin Sistem",
   };
   return labels[role] ?? role;
 }

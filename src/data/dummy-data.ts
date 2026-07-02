@@ -13,19 +13,31 @@ export const dummyUsers: User[] = [
     id: "USR-001",
     name: "Ayu Lestari",
     email: "admin@vocasafe.test",
-    role: "admin_lab",
+    role: "admin",
   },
   {
     id: "USR-002",
     name: "Bima Pratama",
-    email: "auditor@vocasafe.test",
-    role: "auditor",
+    email: "dosen@vocasafe.test",
+    role: "dosen",
   },
   {
     id: "USR-003",
     name: "Citra Dewi",
     email: "teknisi@vocasafe.test",
     role: "teknisi",
+  },
+  {
+    id: "USR-004",
+    name: "Dian Nugroho",
+    email: "kepala_lab@vocasafe.test",
+    role: "kepala_lab",
+  },
+  {
+    id: "USR-005",
+    name: "Eka Saputra",
+    email: "mahasiswa@vocasafe.test",
+    role: "mahasiswa",
   },
 ];
 
@@ -94,7 +106,8 @@ export const dummyAssets: Asset[] = [
     kind: "fasilitas",
     category: "Ventilasi",
     location: "Lab Kimia Terapan",
-    description: "Sistem ventilasi mekanis untuk sirkulasi udara ruang praktik.",
+    description:
+      "Sistem ventilasi mekanis untuk sirkulasi udara ruang praktik.",
     status: "aman",
     lastInspectionAt: "2026-06-28T13:45:00+08:00",
     nextInspectionAt: "2026-07-28T13:45:00+08:00",
@@ -155,18 +168,32 @@ export const dummyChecklists: SafetyChecklist[] = [
   },
 ];
 
+// RPT-001: kritis (5 × 4 × 5 = 100)
 const criticalRiskInput: RiskScoringInput = {
-  severity: 4,
-  likelihood: 4,
-  controlCondition: "sebagian",
-  isRecurring: true,
+  severity: 5,
+  probability: 4,
+  exposure: 5,
 };
 
+// RPT-002: tinggi (4 × 3 × 5 = 60)
 const highRiskInput: RiskScoringInput = {
+  severity: 4,
+  probability: 3,
+  exposure: 5,
+};
+
+// RPT-003: sedang (3 × 3 × 3 = 27)
+const mediumRiskInput: RiskScoringInput = {
   severity: 3,
-  likelihood: 2,
-  controlCondition: "tidak_ada",
-  isRecurring: false,
+  probability: 3,
+  exposure: 3,
+};
+
+// RPT-004: rendah (2 × 2 × 2 = 8)
+const lowRiskInput: RiskScoringInput = {
+  severity: 2,
+  probability: 2,
+  exposure: 2,
 };
 
 export const dummyReports: HazardReport[] = [
@@ -180,7 +207,7 @@ export const dummyReports: HazardReport[] = [
       "Pelindung bergeser saat mesin beroperasi dan tidak menutup area mata bor secara penuh.",
     location: "Lab Teknik Mesin",
     reportedAt: "2026-06-24T10:20:00+08:00",
-    status: "ditindaklanjuti",
+    status: "dalam_penanganan",
     riskInput: criticalRiskInput,
     riskResult: calculateRiskScore(criticalRiskInput),
     evidencePhotos: [
@@ -193,7 +220,7 @@ export const dummyReports: HazardReport[] = [
     ],
     statusHistory: [
       {
-        status: "dilaporkan",
+        status: "baru",
         changedAt: "2026-06-24T10:20:00+08:00",
         changedByUserId: "USR-002",
       },
@@ -204,7 +231,7 @@ export const dummyReports: HazardReport[] = [
         note: "Bahaya terkonfirmasi. Mesin diberi label larangan operasi.",
       },
       {
-        status: "ditindaklanjuti",
+        status: "dalam_penanganan",
         changedAt: "2026-06-24T13:30:00+08:00",
         changedByUserId: "USR-003",
         note: "Penggantian dudukan pelindung sedang dikerjakan.",
@@ -227,7 +254,7 @@ export const dummyReports: HazardReport[] = [
     evidencePhotos: [],
     statusHistory: [
       {
-        status: "dilaporkan",
+        status: "baru",
         changedAt: "2026-06-30T14:10:00+08:00",
         changedByUserId: "USR-002",
       },
@@ -236,6 +263,68 @@ export const dummyReports: HazardReport[] = [
         changedAt: "2026-06-30T15:00:00+08:00",
         changedByUserId: "USR-001",
         note: "Inspeksi ulang ditugaskan kepada teknisi.",
+      },
+    ],
+  },
+  {
+    id: "RPT-003",
+    reportNumber: "VSL-2026-0003",
+    assetId: "AST-003",
+    reporterUserId: "USR-005",
+    title: "Filter ventilasi berdebu tebal",
+    description:
+      "Filter intake ventilasi terlihat berdebu tebal, mengurangi efektivitas sirkulasi udara.",
+    location: "Lab Kimia Terapan",
+    reportedAt: "2026-06-29T09:15:00+08:00",
+    status: "selesai",
+    riskInput: mediumRiskInput,
+    riskResult: calculateRiskScore(mediumRiskInput),
+    evidencePhotos: [],
+    statusHistory: [
+      {
+        status: "baru",
+        changedAt: "2026-06-29T09:15:00+08:00",
+        changedByUserId: "USR-005",
+      },
+      {
+        status: "diverifikasi",
+        changedAt: "2026-06-29T10:00:00+08:00",
+        changedByUserId: "USR-001",
+        note: "Perlu pembersihan filter.",
+      },
+      {
+        status: "dalam_penanganan",
+        changedAt: "2026-06-29T11:00:00+08:00",
+        changedByUserId: "USR-003",
+        note: "Teknisi membersihkan filter.",
+      },
+      {
+        status: "selesai",
+        changedAt: "2026-06-29T14:00:00+08:00",
+        changedByUserId: "USR-003",
+        note: "Filter dibersihkan dan ventilasi berfungsi normal.",
+      },
+    ],
+  },
+  {
+    id: "RPT-004",
+    reportNumber: "VSL-2026-0004",
+    assetId: "AST-001",
+    reporterUserId: "USR-005",
+    title: "Serpihan logam di sekitar mesin bor",
+    description:
+      "Terdapat serpihan logam kecil di lantai sekitar mesin bor yang belum dibersihkan.",
+    location: "Lab Teknik Mesin",
+    reportedAt: "2026-06-28T15:30:00+08:00",
+    status: "baru",
+    riskInput: lowRiskInput,
+    riskResult: calculateRiskScore(lowRiskInput),
+    evidencePhotos: [],
+    statusHistory: [
+      {
+        status: "baru",
+        changedAt: "2026-06-28T15:30:00+08:00",
+        changedByUserId: "USR-005",
       },
     ],
   },

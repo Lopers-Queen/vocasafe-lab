@@ -1,7 +1,68 @@
-import type { HazardReport } from "../types";
+import type { HazardReport, ReportStatus, RiskLevel } from "../types";
 import { dummyReports } from "../data/dummy-data";
 
 const REPORTS_KEY = "vocasafe_reports";
+
+/** Map old status values to new canonical values */
+const STATUS_MIGRATION: Record<string, ReportStatus> = {
+  dilaporkan: "baru",
+  ditindaklanjuti: "dalam_penanganan",
+};
+
+/** Map old risk level field name */
+function migrateRiskResult(
+  riskResult: Record<string, unknown>,
+): { score: number; category: RiskLevel; recommendation: string } {
+  const score = (riskResult.score as number) ?? 0;
+  // If old format used "level" instead of "category", migrate it
+  const category =
+    (riskResult.category as RiskLevel) ??
+    (riskResult.level as RiskLevel) ??
+    "rendah";
+  const recommendation =
+    (riskResult.recommendation as string) ?? "";
+  return { score, category, recommendation };
+}
+
+/** Normalize a report from potentially old localStorage format */
+function normalizeReport(raw: Record<string, unknown>): HazardReport {
+  const report = raw as unknown as HazardReport;
+
+  // Migrate status
+  const status = STATUS_MIGRATION[report.status] ?? report.status;
+
+  // Migrate riskInput: likelihood → probability, add exposure fallback
+  const riskInput = raw.riskInput as Record<string, unknown> | undefined;
+  const normalizedInput = {
+    severity: (riskInput?.severity as number) ?? 1,
+    probability:
+      (riskInput?.probability as number) ??
+      (riskInput?.likelihood as number) ??
+      1,
+    exposure: (riskInput?.exposure as number) ?? 1,
+  };
+
+  // Migrate riskResult: level → category
+  const riskResultRaw =
+    (raw.riskResult as Record<string, unknown>) ?? {};
+  const normalizedResult = migrateRiskResult(riskResultRaw);
+
+  // Migrate statusHistory entries
+  const statusHistory = (
+    report.statusHistory ?? []
+  ).map((h) => ({
+    ...h,
+    status: (STATUS_MIGRATION[h.status] ?? h.status) as ReportStatus,
+  }));
+
+  return {
+    ...report,
+    status: status as ReportStatus,
+    riskInput: normalizedInput,
+    riskResult: normalizedResult,
+    statusHistory,
+  };
+}
 
 /** Read user-created reports from localStorage */
 export function getLocalReports(): HazardReport[] {
@@ -9,7 +70,8 @@ export function getLocalReports(): HazardReport[] {
   const raw = localStorage.getItem(REPORTS_KEY);
   if (!raw) return [];
   try {
-    return JSON.parse(raw) as HazardReport[];
+    const parsed = JSON.parse(raw) as Record<string, unknown>[];
+    return parsed.map(normalizeReport);
   } catch {
     return [];
   }

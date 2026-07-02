@@ -14,9 +14,9 @@ const riskLabels: Record<RiskLevel, string> = {
 };
 
 const statusLabels: Record<ReportStatus, string> = {
-  dilaporkan: "Dilaporkan",
+  baru: "Baru",
   diverifikasi: "Diverifikasi",
-  ditindaklanjuti: "Dalam Penanganan",
+  dalam_penanganan: "Dalam Penanganan",
   selesai: "Selesai",
   ditolak: "Ditolak",
 };
@@ -29,7 +29,7 @@ function exportCsv(reports: HazardReport[]) {
     "Lokasi",
     "Status",
     "Skor Risiko",
-    "Level Risiko",
+    "Kategori Risiko",
     "Tanggal Lapor",
   ];
   const rows = reports.map((r, i) => [
@@ -39,7 +39,7 @@ function exportCsv(reports: HazardReport[]) {
     `"${r.location.replace(/"/g, '""')}"`,
     statusLabels[r.status],
     r.riskResult.score,
-    riskLabels[r.riskResult.level],
+    riskLabels[r.riskResult.category],
     new Date(r.reportedAt).toLocaleDateString("id-ID"),
   ]);
 
@@ -49,7 +49,7 @@ function exportCsv(reports: HazardReport[]) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `audit-vocasafe-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = "vocasafe-audit-report.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -75,13 +75,13 @@ export default function AuditPage() {
     kritis: 0,
   };
   for (const r of reports) {
-    riskSummary[r.riskResult.level]++;
+    riskSummary[r.riskResult.category]++;
   }
 
   const statusSummary: Record<ReportStatus, number> = {
-    dilaporkan: 0,
+    baru: 0,
     diverifikasi: 0,
-    ditindaklanjuti: 0,
+    dalam_penanganan: 0,
     selesai: 0,
     ditolak: 0,
   };
@@ -130,13 +130,13 @@ export default function AuditPage() {
                 </h3>
                 <div className="space-y-1">
                   {(Object.entries(riskSummary) as [RiskLevel, number][]).map(
-                    ([level, count]) => (
+                    ([cat, count]) => (
                       <div
-                        key={level}
+                        key={cat}
                         className="flex items-center justify-between text-sm"
                       >
                         <span className="text-slate-600">
-                          {riskLabels[level]}
+                          {riskLabels[cat]}
                         </span>
                         <span className="font-medium">{count}</span>
                       </div>
@@ -206,7 +206,7 @@ export default function AuditPage() {
                     <td className="px-4 py-3 text-slate-600">{r.location}</td>
                     <td className="px-4 py-3">
                       <span className="text-slate-600">
-                        {riskLabels[r.riskResult.level]} ({r.riskResult.score})
+                        {riskLabels[r.riskResult.category]} ({r.riskResult.score})
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-600">

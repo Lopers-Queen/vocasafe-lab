@@ -6,9 +6,11 @@ import { login, getRoleLabel } from "@/lib/auth";
 import type { UserRole } from "@/types";
 
 const roles: { role: UserRole; description: string }[] = [
-  { role: "admin_lab", description: "Akses penuh: dashboard, laporan, checklist, audit, tindak lanjut" },
-  { role: "auditor", description: "Inspeksi, laporan bahaya, checklist, audit report" },
-  { role: "teknisi", description: "Tindak lanjut laporan, checklist, pemeliharaan alat" },
+  { role: "admin", description: "Akses penuh: dashboard, laporan, checklist, audit, tindak lanjut" },
+  { role: "teknisi", description: "Tindak lanjut laporan, checklist, audit, pemeliharaan alat" },
+  { role: "dosen", description: "Inspeksi, laporan bahaya, checklist K3" },
+  { role: "kepala_lab", description: "Monitoring dashboard, review laporan, audit report" },
+  { role: "mahasiswa", description: "Scan QR, laporan bahaya, lihat aset" },
 ];
 
 export default function LoginPage() {

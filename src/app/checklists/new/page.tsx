@@ -7,6 +7,7 @@ import { ArrowLeft, Send } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { dummyAssets, dummyChecklists } from "@/data/dummy-data";
 import { getCurrentUser } from "@/lib/auth";
+import { calculateRiskScore } from "@/lib/risk-scoring";
 import { saveChecklistResult } from "@/lib/checklist-storage";
 import type { ChecklistAnswer, ChecklistResponse } from "@/types";
 
@@ -22,17 +23,29 @@ function ChecklistForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetChecklistId = searchParams.get("checklistId") ?? "";
+  const presetAssetId = searchParams.get("assetId") ?? "";
 
   const [checklistId, setChecklistId] = useState(presetChecklistId);
-  const [assetId, setAssetId] = useState("");
+  const [assetId, setAssetId] = useState(presetAssetId);
   const [responses, setResponses] = useState<Record<string, { answer: ChecklistAnswer; note: string }>>({});
   const [overallNote, setOverallNote] = useState("");
   const [error, setError] = useState("");
+
+  // Risk finding state
+  const [hasRiskFinding, setHasRiskFinding] = useState(false);
+  const [severity, setSeverity] = useState(3);
+  const [probability, setProbability] = useState(3);
+  const [exposure, setExposure] = useState(3);
 
   const checklist = dummyChecklists.find((cl) => cl.id === checklistId);
   const filteredAssets = checklist
     ? dummyAssets.filter((a) => a.kind === checklist.assetKind)
     : dummyAssets;
+
+  // Validate presetAssetId
+  const presetAssetValid = presetAssetId
+    ? dummyAssets.some((a) => a.id === presetAssetId)
+    : true;
 
   function handleAnswerChange(itemId: string, answer: ChecklistAnswer) {
     setResponses((prev) => ({
@@ -75,6 +88,13 @@ function ChecklistForm() {
       note: responses[item.id].note || undefined,
     }));
 
+    const riskInput = hasRiskFinding
+      ? { severity, probability, exposure }
+      : undefined;
+    const riskResult = hasRiskFinding
+      ? calculateRiskScore({ severity, probability, exposure })
+      : undefined;
+
     saveChecklistResult({
       id: `CKR-${Date.now()}`,
       checklistId: checklist.id,
@@ -83,10 +103,18 @@ function ChecklistForm() {
       completedAt: new Date().toISOString(),
       responses: checklistResponses,
       overallNote,
+      hasRiskFinding,
+      riskInput,
+      riskResult,
     });
 
     router.push("/checklists");
   }
+
+  // Risk preview
+  const riskPreview = hasRiskFinding
+    ? calculateRiskScore({ severity, probability, exposure })
+    : null;
 
   return (
     <AppShell>
@@ -139,6 +167,11 @@ function ChecklistForm() {
                   </option>
                 ))}
               </select>
+              {presetAssetId && !presetAssetValid && (
+                <p className="text-xs text-yellow-600 mt-1">
+                  Aset {presetAssetId} tidak ditemukan. Pilih aset secara manual.
+                </p>
+              )}
             </div>
           </div>
 
@@ -207,6 +240,91 @@ function ChecklistForm() {
               ))}
             </div>
           )}
+
+          {/* Risk finding */}
+          <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={hasRiskFinding}
+                onChange={(e) => setHasRiskFinding(e.target.checked)}
+                className="rounded accent-emerald-600"
+              />
+              Ada temuan risiko?
+            </label>
+
+            {hasRiskFinding && (
+              <div className="space-y-4 pt-2">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Severity (1-5): {severity}
+                    </label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      value={severity}
+                      onChange={(e) => setSeverity(Number(e.target.value))}
+                      className="w-full accent-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Probability (1-5): {probability}
+                    </label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      value={probability}
+                      onChange={(e) => setProbability(Number(e.target.value))}
+                      className="w-full accent-emerald-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Exposure (1-5): {exposure}
+                    </label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={5}
+                      value={exposure}
+                      onChange={(e) => setExposure(Number(e.target.value))}
+                      className="w-full accent-emerald-600"
+                    />
+                  </div>
+                </div>
+
+                {riskPreview && (
+                  <div className="rounded-md bg-slate-50 p-3">
+                    <p className="text-sm text-slate-600">
+                      Skor Risiko:{" "}
+                      <span className="font-bold">{riskPreview.score}</span>{" "}
+                      <span
+                        className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                          riskPreview.category === "rendah"
+                            ? "bg-green-100 text-green-800"
+                            : riskPreview.category === "sedang"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : riskPreview.category === "tinggi"
+                            ? "bg-orange-100 text-orange-800"
+                            : "bg-red-100 text-red-800"
+                        }`}
+                      >
+                        {riskPreview.category.charAt(0).toUpperCase() +
+                          riskPreview.category.slice(1)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {riskPreview.recommendation}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Overall note */}
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">

@@ -1,4 +1,4 @@
-export type UserRole = "admin_lab" | "auditor" | "teknisi";
+export type UserRole = "mahasiswa" | "dosen" | "teknisi" | "kepala_lab" | "admin";
 
 export type AssetKind = "alat" | "fasilitas";
 
@@ -8,15 +8,13 @@ export type AssetStatus =
   | "tidak_layak_pakai";
 
 export type ReportStatus =
-  | "dilaporkan"
+  | "baru"
   | "diverifikasi"
-  | "ditindaklanjuti"
+  | "dalam_penanganan"
   | "selesai"
   | "ditolak";
 
 export type RiskLevel = "rendah" | "sedang" | "tinggi" | "kritis";
-
-export type ControlCondition = "efektif" | "sebagian" | "tidak_ada";
 
 export type ChecklistAnswer = "ya" | "tidak" | "tidak_berlaku";
 
@@ -87,16 +85,13 @@ export interface ReportStatusHistory {
 
 export interface RiskScoringInput {
   severity: number;
-  likelihood: number;
-  controlCondition: ControlCondition;
-  isRecurring: boolean;
+  probability: number;
+  exposure: number;
 }
 
 export interface RiskScoringResult {
-  baseScore: number;
-  modifier: number;
   score: number;
-  level: RiskLevel;
+  category: RiskLevel;
   recommendation: string;
 }
 

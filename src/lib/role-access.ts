@@ -11,14 +11,14 @@ type RouteKey =
   | "/audit";
 
 const ACCESS_MATRIX: Record<RouteKey, UserRole[]> = {
-  "/dashboard": ["admin_lab", "auditor", "teknisi"],
-  "/scan": ["admin_lab", "auditor", "teknisi"],
-  "/assets": ["admin_lab", "auditor", "teknisi"],
-  "/reports": ["admin_lab", "auditor", "teknisi"],
-  "/reports/new": ["admin_lab", "auditor", "teknisi"],
-  "/checklists": ["admin_lab", "auditor", "teknisi"],
-  "/checklists/new": ["admin_lab", "auditor", "teknisi"],
-  "/audit": ["admin_lab", "auditor", "teknisi"],
+  "/dashboard": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
+  "/scan": ["mahasiswa", "dosen", "teknisi", "admin"],
+  "/assets": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
+  "/reports": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
+  "/reports/new": ["mahasiswa", "dosen", "teknisi", "admin"],
+  "/checklists": ["dosen", "teknisi", "admin"],
+  "/checklists/new": ["dosen", "teknisi", "admin"],
+  "/audit": ["teknisi", "kepala_lab", "admin"],
 };
 
 export function canAccessRoute(role: UserRole, route: string): boolean {
@@ -29,7 +29,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   return allowed.includes(role);
 }
 
-/** Only teknisi and admin_lab can update report status / add follow-up */
+/** Only teknisi and admin can update report status / add follow-up */
 export function canEditReportStatus(role: UserRole): boolean {
-  return role === "teknisi" || role === "admin_lab";
+  return role === "teknisi" || role === "admin";
 }

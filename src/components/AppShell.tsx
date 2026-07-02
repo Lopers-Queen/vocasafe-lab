@@ -14,8 +14,10 @@ import {
   LogOut,
   Menu,
   X,
+  ShieldAlert,
 } from "lucide-react";
 import { getCurrentUser, logout, getRoleLabel } from "@/lib/auth";
+import { canAccessRoute } from "@/lib/role-access";
 import type { User } from "@/types";
 
 const navItems = [
@@ -32,6 +34,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
     const u = getCurrentUser();
@@ -40,7 +43,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
     setUser(u);
-  }, [router]);
+
+    // Route guard: check if user can access current pathname
+    if (!canAccessRoute(u.role, pathname)) {
+      setAccessDenied(true);
+    } else {
+      setAccessDenied(false);
+    }
+  }, [router, pathname]);
 
   function handleLogout() {
     logout();
@@ -48,6 +58,52 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return null;
+
+  // Filter nav items based on user role
+  const visibleNavItems = navItems.filter(({ href }) =>
+    canAccessRoute(user.role, href)
+  );
+
+  // Show access denied page
+  if (accessDenied) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <Shield className="h-6 w-6 text-emerald-600" />
+            <span className="font-bold text-slate-900 hidden sm:inline">VocaSafe Lab</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-600">
+              {user.name} ({getRoleLabel(user.role)})
+            </span>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-1 text-sm text-slate-500 hover:text-red-600 transition-colors"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Keluar</span>
+            </button>
+          </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="text-center space-y-4">
+            <ShieldAlert className="mx-auto h-12 w-12 text-red-400" />
+            <h1 className="text-xl font-bold text-slate-900">Akses Tidak Diizinkan</h1>
+            <p className="text-sm text-slate-500 max-w-sm">
+              Role <strong>{getRoleLabel(user.role)}</strong> tidak memiliki akses ke halaman ini.
+            </p>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 transition-colors"
+            >
+              Kembali ke Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -81,7 +137,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Sidebar desktop */}
         <aside className="hidden lg:flex w-56 flex-col border-r border-slate-200 bg-white py-4">
           <nav className="flex flex-col gap-1 px-2">
-            {navItems.map(({ href, label, icon: Icon }) => {
+            {visibleNavItems.map(({ href, label, icon: Icon }) => {
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
                 <Link
@@ -110,7 +166,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             />
             <aside className="relative w-56 bg-white h-full shadow-lg py-4">
               <nav className="flex flex-col gap-1 px-2">
-                {navItems.map(({ href, label, icon: Icon }) => {
+                {visibleNavItems.map(({ href, label, icon: Icon }) => {
                   const active = pathname === href || pathname.startsWith(href + "/");
                   return (
                     <Link

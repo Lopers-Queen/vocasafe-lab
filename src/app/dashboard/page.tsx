@@ -39,13 +39,13 @@ export default function DashboardPage() {
 
   const totalReports = reports.length;
   const criticalReports = reports.filter(
-    (r) => r.riskResult.level === "kritis"
+    (r) => r.riskResult.category === "kritis"
   ).length;
   const pendingReports = reports.filter(
-    (r) => r.status === "dilaporkan" || r.status === "diverifikasi"
+    (r) => r.status !== "selesai" && r.status !== "ditolak"
   ).length;
 
-  // Risk level summary
+  // Risk category summary
   const riskSummary: Record<RiskLevel, number> = {
     rendah: 0,
     sedang: 0,
@@ -53,7 +53,7 @@ export default function DashboardPage() {
     kritis: 0,
   };
   for (const r of reports) {
-    riskSummary[r.riskResult.level]++;
+    riskSummary[r.riskResult.category]++;
   }
 
   // Recent reports (last 5)
@@ -114,13 +114,13 @@ export default function DashboardPage() {
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {(Object.entries(riskSummary) as [RiskLevel, number][]).map(
-              ([level, count]) => (
+              ([cat, count]) => (
                 <div
-                  key={level}
-                  className={`rounded-lg p-3 text-center ${riskColors[level]}`}
+                  key={cat}
+                  className={`rounded-lg p-3 text-center ${riskColors[cat]}`}
                 >
                   <p className="text-2xl font-bold">{count}</p>
-                  <p className="text-sm font-medium">{riskLabels[level]}</p>
+                  <p className="text-sm font-medium">{riskLabels[cat]}</p>
                 </div>
               )
             )}
@@ -152,10 +152,10 @@ export default function DashboardPage() {
                   </div>
                   <span
                     className={`ml-3 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                      riskColors[r.riskResult.level]
+                      riskColors[r.riskResult.category]
                     }`}
                   >
-                    {riskLabels[r.riskResult.level]}
+                    {riskLabels[r.riskResult.category]}
                   </span>
                 </Link>
               ))}

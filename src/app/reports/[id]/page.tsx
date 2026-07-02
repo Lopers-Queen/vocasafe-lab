@@ -18,17 +18,17 @@ const riskColors: Record<RiskLevel, string> = {
 };
 
 const statusLabels: Record<ReportStatus, string> = {
-  dilaporkan: "Dilaporkan",
+  baru: "Baru",
   diverifikasi: "Diverifikasi",
-  ditindaklanjuti: "Dalam Penanganan",
+  dalam_penanganan: "Dalam Penanganan",
   selesai: "Selesai",
   ditolak: "Ditolak",
 };
 
 const statusColors: Record<ReportStatus, string> = {
-  dilaporkan: "bg-slate-100 text-slate-700",
+  baru: "bg-slate-100 text-slate-700",
   diverifikasi: "bg-blue-100 text-blue-700",
-  ditindaklanjuti: "bg-yellow-100 text-yellow-700",
+  dalam_penanganan: "bg-yellow-100 text-yellow-700",
   selesai: "bg-green-100 text-green-700",
   ditolak: "bg-red-100 text-red-700",
 };
@@ -96,11 +96,11 @@ export default function ReportDetailPage() {
             <div className="flex flex-col items-end gap-1">
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  riskColors[report.riskResult.level]
+                  riskColors[report.riskResult.category]
                 }`}
               >
-                {report.riskResult.level.charAt(0).toUpperCase() +
-                  report.riskResult.level.slice(1)}{" "}
+                {report.riskResult.category.charAt(0).toUpperCase() +
+                  report.riskResult.category.slice(1)}{" "}
                 (Skor: {report.riskResult.score})
               </span>
               <span
@@ -144,11 +144,10 @@ export default function ReportDetailPage() {
           {/* Risk detail */}
           <div className="mt-4 rounded-md bg-slate-50 p-3">
             <p className="text-sm font-medium text-slate-700 mb-1">Detail Risiko</p>
-            <div className="grid grid-cols-2 gap-2 text-sm text-slate-600 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 text-sm text-slate-600 sm:grid-cols-3">
               <p>Severity: {report.riskInput.severity}</p>
-              <p>Likelihood: {report.riskInput.likelihood}</p>
-              <p>Kontrol: {report.riskInput.controlCondition}</p>
-              <p>Berulang: {report.riskInput.isRecurring ? "Ya" : "Tidak"}</p>
+              <p>Probability: {report.riskInput.probability}</p>
+              <p>Exposure: {report.riskInput.exposure}</p>
             </div>
             <p className="text-xs text-slate-500 mt-1">
               {report.riskResult.recommendation}

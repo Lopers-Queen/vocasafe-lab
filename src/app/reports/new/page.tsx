@@ -13,7 +13,7 @@ import {
   generateReportId,
   generateReportNumber,
 } from "@/lib/report-storage";
-import type { ControlCondition, HazardReport } from "@/types";
+import type { HazardReport } from "@/types";
 
 export default function NewReportPageWrapper() {
   return (
@@ -35,10 +35,8 @@ function NewReportPage() {
     () => dummyAssets.find((a) => a.id === presetAssetId)?.location ?? ""
   );
   const [severity, setSeverity] = useState(3);
-  const [likelihood, setLikelihood] = useState(3);
-  const [controlCondition, setControlCondition] =
-    useState<ControlCondition>("sebagian");
-  const [isRecurring, setIsRecurring] = useState(false);
+  const [probability, setProbability] = useState(3);
+  const [exposure, setExposure] = useState(3);
   const [error, setError] = useState("");
 
   function handleAssetChange(newAssetId: string) {
@@ -62,7 +60,7 @@ function NewReportPage() {
       return;
     }
 
-    const riskInput = { severity, likelihood, controlCondition, isRecurring };
+    const riskInput = { severity, probability, exposure };
     const riskResult = calculateRiskScore(riskInput);
 
     const report: HazardReport = {
@@ -74,13 +72,13 @@ function NewReportPage() {
       description: description.trim(),
       location,
       reportedAt: new Date().toISOString(),
-      status: "dilaporkan",
+      status: "baru",
       riskInput,
       riskResult,
       evidencePhotos: [],
       statusHistory: [
         {
-          status: "dilaporkan",
+          status: "baru",
           changedAt: new Date().toISOString(),
           changedByUserId: user.id,
         },
@@ -93,9 +91,8 @@ function NewReportPage() {
 
   const previewRisk = calculateRiskScore({
     severity,
-    likelihood,
-    controlCondition,
-    isRecurring,
+    probability,
+    exposure,
   });
 
   return (
@@ -173,7 +170,7 @@ function NewReportPage() {
           <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm space-y-4">
             <h2 className="text-lg font-semibold text-slate-900">Penilaian Risiko</h2>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Severity (1-5): {severity}
@@ -189,45 +186,31 @@ function NewReportPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Likelihood (1-5): {likelihood}
+                  Probability (1-5): {probability}
                 </label>
                 <input
                   type="range"
                   min={1}
                   max={5}
-                  value={likelihood}
-                  onChange={(e) => setLikelihood(Number(e.target.value))}
+                  value={probability}
+                  onChange={(e) => setProbability(Number(e.target.value))}
+                  className="w-full accent-emerald-600"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Exposure (1-5): {exposure}
+                </label>
+                <input
+                  type="range"
+                  min={1}
+                  max={5}
+                  value={exposure}
+                  onChange={(e) => setExposure(Number(e.target.value))}
                   className="w-full accent-emerald-600"
                 />
               </div>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Kondisi Kontrol
-              </label>
-              <select
-                value={controlCondition}
-                onChange={(e) =>
-                  setControlCondition(e.target.value as ControlCondition)
-                }
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none"
-              >
-                <option value="efektif">Efektif</option>
-                <option value="sebagian">Sebagian</option>
-                <option value="tidak_ada">Tidak Ada</option>
-              </select>
-            </div>
-
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input
-                type="checkbox"
-                checked={isRecurring}
-                onChange={(e) => setIsRecurring(e.target.checked)}
-                className="rounded accent-emerald-600"
-              />
-              Kejadian berulang
-            </label>
 
             {/* Preview */}
             <div className="rounded-md bg-slate-50 p-3">
@@ -236,17 +219,17 @@ function NewReportPage() {
                 <span className="font-bold">{previewRisk.score}</span>{" "}
                 <span
                   className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                    previewRisk.level === "rendah"
+                    previewRisk.category === "rendah"
                       ? "bg-green-100 text-green-800"
-                      : previewRisk.level === "sedang"
+                      : previewRisk.category === "sedang"
                       ? "bg-yellow-100 text-yellow-800"
-                      : previewRisk.level === "tinggi"
+                      : previewRisk.category === "tinggi"
                       ? "bg-orange-100 text-orange-800"
                       : "bg-red-100 text-red-800"
                   }`}
                 >
-                  {previewRisk.level.charAt(0).toUpperCase() +
-                    previewRisk.level.slice(1)}
+                  {previewRisk.category.charAt(0).toUpperCase() +
+                    previewRisk.category.slice(1)}
                 </span>
               </p>
               <p className="text-xs text-slate-500 mt-1">

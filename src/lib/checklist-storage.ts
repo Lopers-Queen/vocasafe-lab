@@ -1,4 +1,4 @@
-import type { ChecklistResponse } from "../types";
+import type { ChecklistResponse, RiskScoringInput, RiskScoringResult } from "../types";
 
 const CHECKLIST_KEY = "vocasafe_checklist_results";
 
@@ -10,6 +10,9 @@ export interface ChecklistResult {
   completedAt: string;
   responses: ChecklistResponse[];
   overallNote: string;
+  hasRiskFinding?: boolean;
+  riskInput?: RiskScoringInput;
+  riskResult?: RiskScoringResult;
 }
 
 export function getChecklistResults(): ChecklistResult[] {

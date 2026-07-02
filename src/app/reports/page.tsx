@@ -15,17 +15,17 @@ const riskColors: Record<RiskLevel, string> = {
 };
 
 const statusLabels: Record<ReportStatus, string> = {
-  dilaporkan: "Dilaporkan",
+  baru: "Baru",
   diverifikasi: "Diverifikasi",
-  ditindaklanjuti: "Dalam Penanganan",
+  dalam_penanganan: "Dalam Penanganan",
   selesai: "Selesai",
   ditolak: "Ditolak",
 };
 
 const statusColors: Record<ReportStatus, string> = {
-  dilaporkan: "bg-slate-100 text-slate-700",
+  baru: "bg-slate-100 text-slate-700",
   diverifikasi: "bg-blue-100 text-blue-700",
-  ditindaklanjuti: "bg-yellow-100 text-yellow-700",
+  dalam_penanganan: "bg-yellow-100 text-yellow-700",
   selesai: "bg-green-100 text-green-700",
   ditolak: "bg-red-100 text-red-700",
 };
@@ -82,10 +82,10 @@ export default function ReportsPage() {
                   <div className="flex flex-col items-end gap-1">
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        riskColors[r.riskResult.level]
+                        riskColors[r.riskResult.category]
                       }`}
                     >
-                      {r.riskResult.level.charAt(0).toUpperCase() + r.riskResult.level.slice(1)}
+                      {r.riskResult.category.charAt(0).toUpperCase() + r.riskResult.category.slice(1)}
                     </span>
                     <span
                       className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${

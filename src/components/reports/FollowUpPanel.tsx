@@ -7,9 +7,9 @@ import { updateReport } from "@/lib/report-storage";
 import type { HazardReport, ReportStatus } from "@/types";
 
 const STATUS_OPTIONS: { value: ReportStatus; label: string }[] = [
-  { value: "dilaporkan", label: "Dilaporkan" },
+  { value: "baru", label: "Baru" },
   { value: "diverifikasi", label: "Diverifikasi" },
-  { value: "ditindaklanjuti", label: "Dalam Penanganan" },
+  { value: "dalam_penanganan", label: "Dalam Penanganan" },
   { value: "selesai", label: "Selesai" },
   { value: "ditolak", label: "Ditolak" },
 ];
@@ -25,8 +25,8 @@ export default function FollowUpPanel({ report, onUpdate }: FollowUpPanelProps) 
   const user = getCurrentUser();
   const canEdit = user ? canEditReportStatus(user.role) : false;
 
-  // Major 1 FIX: Initialize dropdown from report.status, not a hardcoded default.
-  // If report.status is a valid ReportStatus, use it. Otherwise fallback safely.
+  // Initialize dropdown from report.status. Fallback to "diverifikasi" only
+  // if report.status is somehow invalid.
   const initialStatus: ReportStatus = VALID_STATUSES.has(report.status)
     ? report.status
     : "diverifikasi";
