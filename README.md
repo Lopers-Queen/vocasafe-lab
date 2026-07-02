@@ -1,36 +1,145 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# VocaSafe Lab
 
-## Getting Started
+VocaSafe Lab adalah prototype sistem audit K3 dan manajemen risiko laboratorium vokasi berbasis QR Code dan AI-Assisted Risk Scoring.
 
-First, run the development server:
+Prototype ini dirancang untuk demo hackathon, bahan screenshot/mockup proposal, dan validasi alur kerja K3 laboratorium vokasi. Data masih menggunakan dummy data dan localStorage.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Fitur Utama
+
+- Dummy login role
+- Dashboard monitoring
+- Data alat/fasilitas
+- Detail asset + QR Code
+- Simulasi scan QR
+- SOP digital
+- Form laporan bahaya
+- Risk scoring severity x probability x exposure
+- Daftar laporan
+- Tindak lanjut laporan
+- Checklist K3
+- Audit report
+- Export CSV
+- Print / Save as PDF
+
+## Stack
+
+- Next.js App Router
+- TypeScript
+- Tailwind CSS
+- LocalStorage
+- qrcode.react
+- lucide-react
+
+## Role Demo
+
+- Mahasiswa
+- Dosen
+- Teknisi/Laboran
+- Kepala Laboratorium
+- Admin
+
+## Hak Akses Role
+
+| Route | Mahasiswa | Dosen | Teknisi | Kepala Lab | Admin |
+|---|---:|---:|---:|---:|---:|
+| `/dashboard` | Ya | Ya | Ya | Ya | Ya |
+| `/scan` | Ya | Ya | Ya | Tidak | Ya |
+| `/assets` | Ya | Ya | Ya | Ya | Ya |
+| `/assets/[id]` | Ya | Ya | Ya | Ya | Ya |
+| `/reports` | Ya | Ya | Ya | Ya | Ya |
+| `/reports/new` | Ya | Ya | Ya | Tidak | Ya |
+| `/reports/[id]` | Ya | Ya | Ya | Ya | Ya |
+| `/checklists` | Tidak | Ya | Ya | Tidak | Ya |
+| `/checklists/new` | Tidak | Ya | Ya | Tidak | Ya |
+| `/audit` | Tidak | Tidak | Ya | Ya | Ya |
+
+Hanya `teknisi` dan `admin` yang dapat mengubah status laporan dan menambahkan catatan tindak lanjut.
+
+## Status Laporan
+
+Status laporan resmi:
+
+- `baru`
+- `diverifikasi`
+- `dalam_penanganan`
+- `selesai`
+- `ditolak`
+
+## Risk Scoring
+
+Rumus risk scoring:
+
+```text
+Risk Score = Severity x Probability x Exposure
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Setiap faktor bernilai integer 1 sampai 5.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Kategori risiko:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Skor | Kategori |
+|---:|---|
+| 1-20 | rendah |
+| 21-50 | sedang |
+| 51-80 | tinggi |
+| 81-125 | kritis |
 
-## Learn More
+Contoh:
 
-To learn more about Next.js, take a look at the following resources:
+```text
+Severity = 5
+Probability = 4
+Exposure = 5
+Risk Score = 5 x 4 x 5 = 100
+Kategori = kritis
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Cara Menjalankan Lokal
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm install
+npm run dev
+```
 
-## Deploy on Vercel
+Buka aplikasi di browser melalui URL yang ditampilkan Next.js, biasanya:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+http://localhost:3000
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Validasi sebelum deploy:
+
+```bash
+npm run typecheck
+npm run build
+```
+
+## Data Prototype
+
+Prototype ini belum memakai backend production. Data demo terdiri dari:
+
+- Dummy data untuk user, asset, SOP, checklist template, dan laporan awal
+- localStorage untuk laporan baru, tindak lanjut, dan hasil checklist lokal
+
+Key localStorage utama:
+
+- `vocasafe_current_user`
+- `vocasafe_reports`
+- `vocasafe_checklist_results`
+
+## Catatan Prototype
+
+- Belum memakai Supabase
+- Belum memakai API AI
+- Belum memakai kamera QR sungguhan
+- Belum memakai upload server/storage
+- Belum memakai library PDF eksternal
+- Export PDF menggunakan fitur browser Print / Save as PDF
+- Semua data demo memakai dummy data dan localStorage
+
+## Dokumentasi Tambahan
+
+- Demo script: `docs/demo-script.md`
+- Testing checklist: `docs/testing-checklist.md`
+- Release notes: `docs/release-notes.md`
+- Project summary: `docs/project-summary.md`
