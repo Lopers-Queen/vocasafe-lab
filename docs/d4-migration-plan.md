@@ -218,23 +218,24 @@ Fallback:
 
 ## Urutan Task D4
 
-1. D4-1 Schema Supabase awal
+1. D4-1 Schema Supabase awal — **Selesai**
    - Branch migrasi, migration SQL, seed SQL, dokumentasi migrasi.
 
-2. D4-2 Supabase client/server setup
+2. D4-2 Supabase client/server setup — **Selesai**
    - Tambah dependency dan helper Supabase client/server/admin.
 
-3. D4-3 Auth dan user_profiles
+3. D4-3 Auth dan user_profiles — **Selesai**
    - Login email/password dan route guard berbasis profile DB.
 
-4. D4-4 Seed database
-   - Jalankan migration dan seed ke Supabase dev project.
+4. D4-4 Seed database verification — **Selesai**
+   - Verifikasi hasil migration/seed pada Supabase dev project.
+   - Dokumentasikan query jumlah data, relasi asset-SOP, checklist, dan admin pertama.
 
-5. D4-5 Admin users
+5. D4-5 Assets dan SOP dari database
+   - Ubah halaman assets/detail asset agar membaca Supabase.
+
+6. D4-6 Admin users
    - Halaman admin user dan API route server-only untuk create user.
-
-6. D4-6 Assets dan SOP dari database
-   - Ubah halaman assets/detail asset agar membaca DB.
 
 7. D4-7 QR scanner kamera asli
    - Integrasi scanner kamera dengan fallback manual.
