@@ -116,26 +116,29 @@ npm run build
 
 ## Data Prototype
 
-Prototype ini belum memakai backend production. Data demo terdiri dari:
+Migrasi D4 sudah memakai Supabase Auth untuk autentikasi. Role pengguna dibaca
+dari tabel `user_profiles`; aplikasi tidak lagi memakai login dummy atau key
+localStorage untuk menyimpan pengguna aktif. Data operasional demo masih terdiri
+dari:
 
-- Dummy data untuk user, asset, SOP, checklist template, dan laporan awal
+- Dummy data untuk asset, SOP, checklist template, dan laporan awal
 - localStorage untuk laporan baru, tindak lanjut, dan hasil checklist lokal
 
 Key localStorage utama:
 
-- `vocasafe_current_user`
 - `vocasafe_reports`
 - `vocasafe_checklist_results`
 
 ## Catatan Prototype
 
-- Belum memakai Supabase
+- Supabase saat ini digunakan untuk Auth dan `user_profiles`; data operasional
+  belum dimigrasikan ke Supabase
 - Belum memakai API AI
 - Belum memakai kamera QR sungguhan
 - Belum memakai upload server/storage
 - Belum memakai library PDF eksternal
 - Export PDF menggunakan fitur browser Print / Save as PDF
-- Semua data demo memakai dummy data dan localStorage
+- Data operasional demo masih memakai dummy data dan localStorage
 
 ## Dokumentasi Tambahan
 

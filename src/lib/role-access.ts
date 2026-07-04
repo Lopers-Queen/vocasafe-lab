@@ -8,7 +8,8 @@ type RouteKey =
   | "/reports/new"
   | "/checklists"
   | "/checklists/new"
-  | "/audit";
+  | "/audit"
+  | "/admin";
 
 const ACCESS_MATRIX: Record<RouteKey, UserRole[]> = {
   "/dashboard": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
@@ -19,14 +20,25 @@ const ACCESS_MATRIX: Record<RouteKey, UserRole[]> = {
   "/checklists": ["dosen", "teknisi", "admin"],
   "/checklists/new": ["dosen", "teknisi", "admin"],
   "/audit": ["teknisi", "kepala_lab", "admin"],
+  "/admin": ["admin"],
 };
 
+function normalizeRoute(route: string): RouteKey | null {
+  if (route === "/reports/new") return "/reports/new";
+  if (route.startsWith("/reports/")) return "/reports";
+  if (route === "/checklists/new") return "/checklists/new";
+  if (route.startsWith("/assets/")) return "/assets";
+  if (route === "/admin" || route.startsWith("/admin/")) return "/admin";
+  if (Object.prototype.hasOwnProperty.call(ACCESS_MATRIX, route)) {
+    return route as RouteKey;
+  }
+  return null;
+}
+
 export function canAccessRoute(role: UserRole, route: string): boolean {
-  // Dynamic routes: normalize /assets/[id] to /assets, /reports/[id] to /reports
-  const normalized = route.replace(/\/[A-Z]{3}-\d+.*$/, "") as RouteKey;
-  const allowed = ACCESS_MATRIX[normalized];
-  if (!allowed) return true; // routes not in matrix are open
-  return allowed.includes(role);
+  const normalized = normalizeRoute(route);
+  if (!normalized) return true; // routes not in matrix are open
+  return ACCESS_MATRIX[normalized].includes(role);
 }
 
 /** Only teknisi and admin can update report status / add follow-up */
