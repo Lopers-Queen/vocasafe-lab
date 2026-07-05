@@ -6,14 +6,24 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   Clock,
   ExternalLink,
   ImageIcon,
   Loader2,
+  Save,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
-import { fetchReportById, type DatabaseReport } from "@/lib/reports";
-import type { ReportStatus, RiskLevel } from "@/types";
+import { getCurrentUserProfile } from "@/lib/auth";
+import { canEditReportStatus } from "@/lib/role-access";
+import {
+  fetchReportById,
+  fetchReportFollowUps,
+  saveReportFollowUp,
+  type DatabaseReport,
+  type ReportFollowUp,
+} from "@/lib/reports";
+import type { AppUser, ReportStatus, RiskLevel } from "@/types";
 
 const riskColors: Record<RiskLevel, string> = {
   rendah: "bg-green-100 text-green-800",
@@ -38,6 +48,14 @@ const statusColors: Record<ReportStatus, string> = {
   ditolak: "bg-red-100 text-red-700",
 };
 
+const statusOptions: { value: ReportStatus; label: string }[] = [
+  { value: "baru", label: "Baru" },
+  { value: "diverifikasi", label: "Diverifikasi" },
+  { value: "dalam_penanganan", label: "Dalam Penanganan" },
+  { value: "selesai", label: "Selesai" },
+  { value: "ditolak", label: "Ditolak" },
+];
+
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -55,13 +73,28 @@ export default function ReportDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState("");
   const [attachmentError, setAttachmentError] = useState("");
+  const [followUps, setFollowUps] = useState<ReportFollowUp[]>([]);
+  const [followUpError, setFollowUpError] = useState("");
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [selectedStatus, setSelectedStatus] = useState<ReportStatus>("baru");
+  const [followUpNote, setFollowUpNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [feedbackKind, setFeedbackKind] = useState<"success" | "error">(
+    "success",
+  );
 
   useEffect(() => {
     let active = true;
 
-    void fetchReportById(id).then((result) => {
+    void Promise.all([
+      fetchReportById(id),
+      fetchReportFollowUps(id),
+      getCurrentUserProfile(),
+    ]).then(([result, followUpResult, profileResult]) => {
       if (!active) return;
       setReport(result.report);
+      if (result.report) setSelectedStatus(result.report.status);
       setNotFound(!result.report && !result.error);
       setError(
         result.error
@@ -73,6 +106,13 @@ export default function ReportDetailPage() {
           ? `Foto bukti tidak dapat ditampilkan: ${result.attachmentError}`
           : "",
       );
+      setFollowUps(followUpResult.followUps);
+      setFollowUpError(
+        followUpResult.error
+          ? `Riwayat tindak lanjut tidak dapat dimuat: ${followUpResult.error}`
+          : "",
+      );
+      setCurrentUser(profileResult.user);
       setLoading(false);
     });
 
@@ -80,6 +120,74 @@ export default function ReportDetailPage() {
       active = false;
     };
   }, [id]);
+
+  const canUpdate = currentUser
+    ? canEditReportStatus(currentUser.role)
+    : false;
+
+  async function handleSaveFollowUp(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFeedback("");
+
+    if (!report || !canUpdate) return;
+    if (!followUpNote.trim()) {
+      setFeedbackKind("error");
+      setFeedback("Catatan tindak lanjut wajib diisi.");
+      return;
+    }
+
+    setSaving(true);
+    const saveResult = await saveReportFollowUp({
+      reportId: report.id,
+      status: selectedStatus,
+      note: followUpNote,
+    });
+    let refreshError = "";
+
+    if (saveResult.statusUpdated) {
+      const [reportResult, followUpResult] = await Promise.all([
+        fetchReportById(report.id),
+        fetchReportFollowUps(report.id),
+      ]);
+
+      if (reportResult.report) {
+        setReport(reportResult.report);
+        setSelectedStatus(reportResult.report.status);
+      }
+      if (reportResult.error) {
+        refreshError = `Status tersimpan, tetapi detail gagal dimuat ulang: ${reportResult.error}`;
+      }
+      setAttachmentError(
+        reportResult.attachmentError
+          ? `Foto bukti tidak dapat ditampilkan: ${reportResult.attachmentError}`
+          : "",
+      );
+      setFollowUps(followUpResult.followUps);
+      setFollowUpError(
+        followUpResult.error
+          ? `Riwayat tindak lanjut tidak dapat dimuat: ${followUpResult.error}`
+          : "",
+      );
+      if (!refreshError && followUpResult.error) {
+        refreshError = `Tindak lanjut tersimpan, tetapi riwayat gagal dimuat ulang: ${followUpResult.error}`;
+      }
+    }
+
+    if (saveResult.error) {
+      setFeedbackKind("error");
+      setFeedback(saveResult.error);
+    } else if (refreshError) {
+      setFollowUpNote("");
+      setFeedbackKind("error");
+      setFeedback(refreshError);
+    } else {
+      setFollowUpNote("");
+      setFeedbackKind("success");
+      setFeedback("Status dan tindak lanjut berhasil disimpan.");
+    }
+
+    setSaving(false);
+  }
 
   if (loading) {
     return (
@@ -275,14 +383,147 @@ export default function ReportDetailPage() {
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-3 flex items-center gap-2">
+          <div className="mb-4 flex items-center gap-2">
             <Clock className="h-5 w-5 text-slate-600" />
             <h2 className="text-lg font-semibold text-slate-900">Tindak Lanjut</h2>
           </div>
-          <p className="text-sm text-slate-500">
-            Perubahan status dan riwayat tindak lanjut Supabase akan dimigrasi
-            pada task berikutnya.
-          </p>
+
+          {followUpError && (
+            <p
+              role="alert"
+              className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {followUpError}
+            </p>
+          )}
+
+          {followUps.length === 0 ? (
+            <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-4 text-center">
+              <p className="text-sm text-slate-500">Belum ada tindak lanjut.</p>
+            </div>
+          ) : (
+            <ol className="space-y-3">
+              {followUps.map((followUp) => (
+                <li
+                  key={followUp.id}
+                  className="border-l-2 border-emerald-200 py-1 pl-4"
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusColors[followUp.status]}`}
+                    >
+                      {statusLabels[followUp.status]}
+                    </span>
+                    <time className="text-xs text-slate-400">
+                      {new Date(followUp.createdAt).toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </time>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
+                    {followUp.note}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {canUpdate ? (
+            <form
+              onSubmit={handleSaveFollowUp}
+              className="mt-6 space-y-4 border-t border-slate-200 pt-5"
+            >
+              <h3 className="font-semibold text-slate-800">
+                Tambah Tindak Lanjut
+              </h3>
+
+              <div>
+                <label
+                  htmlFor="report-status"
+                  className="mb-1 block text-sm font-medium text-slate-700"
+                >
+                  Status Laporan
+                </label>
+                <select
+                  id="report-status"
+                  value={selectedStatus}
+                  onChange={(event) =>
+                    setSelectedStatus(event.target.value as ReportStatus)
+                  }
+                  disabled={saving}
+                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-100"
+                >
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="follow-up-note"
+                  className="mb-1 block text-sm font-medium text-slate-700"
+                >
+                  Catatan Tindak Lanjut
+                </label>
+                <textarea
+                  id="follow-up-note"
+                  value={followUpNote}
+                  onChange={(event) => setFollowUpNote(event.target.value)}
+                  rows={4}
+                  required
+                  disabled={saving}
+                  placeholder="Tuliskan tindakan yang sudah atau akan dilakukan..."
+                  className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 disabled:bg-slate-100"
+                />
+              </div>
+
+              {feedback && (
+                <p
+                  role={feedbackKind === "error" ? "alert" : "status"}
+                  className={`flex items-start gap-2 rounded-md border p-3 text-sm ${
+                    feedbackKind === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {feedbackKind === "success" ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  ) : (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  {feedback}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={saving || !followUpNote.trim()}
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400 sm:w-auto"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" /> Simpan Tindak Lanjut
+                  </>
+                )}
+              </button>
+            </form>
+          ) : (
+            <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-500">
+              Hanya teknisi atau admin yang dapat memperbarui status dan menambah
+              tindak lanjut.
+            </p>
+          )}
         </section>
       </div>
     </AppShell>

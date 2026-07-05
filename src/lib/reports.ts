@@ -6,6 +6,7 @@ import type {
   ReportStatus,
   RiskLevel,
   RiskScoringInput,
+  UserRole,
 } from "@/types";
 
 export const REPORT_EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
@@ -81,6 +82,20 @@ interface AttachmentRow {
   created_at: string;
 }
 
+interface FollowUpRow {
+  id: string;
+  report_id: string;
+  status: ReportStatus;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+interface ProfileRoleRow {
+  role: UserRole;
+  is_active: boolean;
+}
+
 export interface ReportAssetSummary {
   id: string;
   code: string;
@@ -99,6 +114,15 @@ export interface ReportAttachment {
   uploadedBy: string | null;
   createdAt: string;
   signedUrl: string | null;
+}
+
+export interface ReportFollowUp {
+  id: string;
+  reportId: string;
+  status: ReportStatus;
+  note: string;
+  createdBy: string | null;
+  createdAt: string;
 }
 
 export interface DatabaseReport {
@@ -198,6 +222,17 @@ function safeFileName(fileName: string): string {
     .replace(/^-|-$/g, "");
 
   return normalized || "evidence-image";
+}
+
+function mapFollowUp(row: FollowUpRow): ReportFollowUp {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    status: row.status,
+    note: row.note ?? "Tanpa catatan tindak lanjut.",
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+  };
 }
 
 export function validateEvidenceFile(file: File): string | null {
@@ -301,6 +336,163 @@ export async function fetchReportById(id: string): Promise<{
       report: null,
       error: errorMessage(error),
       attachmentError: null,
+    };
+  }
+}
+
+export async function fetchReportFollowUps(reportId: string): Promise<{
+  followUps: ReportFollowUp[];
+  error: string | null;
+}> {
+  if (!UUID_PATTERN.test(reportId)) {
+    return { followUps: [], error: null };
+  }
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("report_followups")
+      .select("id,report_id,status,note,created_by,created_at")
+      .eq("report_id", reportId)
+      .order("created_at", { ascending: true });
+
+    if (error) return { followUps: [], error: error.message };
+
+    return {
+      followUps: ((data ?? []) as FollowUpRow[]).map(mapFollowUp),
+      error: null,
+    };
+  } catch (error) {
+    return { followUps: [], error: errorMessage(error) };
+  }
+}
+
+const VALID_REPORT_STATUSES = new Set<ReportStatus>([
+  "baru",
+  "diverifikasi",
+  "dalam_penanganan",
+  "selesai",
+  "ditolak",
+]);
+
+export async function saveReportFollowUp(input: {
+  reportId: string;
+  status: ReportStatus;
+  note: string;
+}): Promise<{
+  followUp: ReportFollowUp | null;
+  statusUpdated: boolean;
+  error: string | null;
+}> {
+  const note = input.note.trim();
+
+  if (!UUID_PATTERN.test(input.reportId)) {
+    return {
+      followUp: null,
+      statusUpdated: false,
+      error: "ID laporan tidak valid.",
+    };
+  }
+
+  if (!VALID_REPORT_STATUSES.has(input.status)) {
+    return {
+      followUp: null,
+      statusUpdated: false,
+      error: "Status laporan tidak valid.",
+    };
+  }
+
+  if (!note) {
+    return {
+      followUp: null,
+      statusUpdated: false,
+      error: "Catatan tindak lanjut wajib diisi.",
+    };
+  }
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !authData.user) {
+      return {
+        followUp: null,
+        statusUpdated: false,
+        error: authError?.message ?? "Sesi login tidak ditemukan.",
+      };
+    }
+
+    const { data: profileData, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("role,is_active")
+      .eq("id", authData.user.id)
+      .single();
+
+    if (profileError || !profileData) {
+      return {
+        followUp: null,
+        statusUpdated: false,
+        error: profileError?.message ?? "Profil pengguna tidak ditemukan.",
+      };
+    }
+
+    const profile = profileData as ProfileRoleRow;
+    if (!profile.is_active || !["teknisi", "admin"].includes(profile.role)) {
+      return {
+        followUp: null,
+        statusUpdated: false,
+        error: "Hanya teknisi atau admin yang dapat memperbarui laporan.",
+      };
+    }
+
+    const updatedAt = new Date().toISOString();
+    const { data: updatedReport, error: updateError } = await supabase
+      .from("reports")
+      .update({
+        status: input.status,
+        updated_at: updatedAt,
+      })
+      .eq("id", input.reportId)
+      .select("id")
+      .single();
+
+    if (updateError || !updatedReport) {
+      return {
+        followUp: null,
+        statusUpdated: false,
+        error: `Status laporan gagal diperbarui: ${updateError?.message ?? "Laporan tidak ditemukan atau tidak dapat diakses."}`,
+      };
+    }
+
+    const { data: followUpData, error: followUpError } = await supabase
+      .from("report_followups")
+      .insert({
+        report_id: input.reportId,
+        status: input.status,
+        note,
+        created_by: authData.user.id,
+      })
+      .select("id,report_id,status,note,created_by,created_at")
+      .single();
+
+    if (followUpError || !followUpData) {
+      return {
+        followUp: null,
+        statusUpdated: true,
+        error: `Status berhasil diperbarui, tetapi tindak lanjut gagal disimpan: ${followUpError?.message ?? "Unknown error"}`,
+      };
+    }
+
+    return {
+      followUp: mapFollowUp(followUpData as FollowUpRow),
+      statusUpdated: true,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      followUp: null,
+      statusUpdated: false,
+      error: errorMessage(error),
     };
   }
 }
