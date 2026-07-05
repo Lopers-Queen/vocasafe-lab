@@ -3,8 +3,11 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Info, Loader2, QrCode, Search } from "lucide-react";
+import { Info, Keyboard, Loader2, Search } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import QrCameraScanner, {
+  type CameraLookupResult,
+} from "@/components/scan/QrCameraScanner";
 import { fetchAssetByLookup } from "@/lib/assets";
 
 const EXAMPLE_INPUTS = ["AST-001", "vocasafe://assets/AST-001"];
@@ -14,6 +17,27 @@ export default function ScanPage() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  async function lookupAndOpenAsset(lookup: string): Promise<CameraLookupResult> {
+    const result = await fetchAssetByLookup(lookup);
+
+    if (result.error) {
+      return {
+        success: false,
+        message: `Data aset tidak dapat diperiksa: ${result.error}`,
+      };
+    }
+
+    if (!result.asset) {
+      return {
+        success: false,
+        message: "Aset tidak ditemukan. Gunakan input manual atau coba QR lain.",
+      };
+    }
+
+    router.push(`/assets/${encodeURIComponent(result.asset.code)}`);
+    return { success: true };
+  }
 
   async function handleScan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -27,42 +51,36 @@ export default function ScanPage() {
     setError("");
     setLoading(true);
 
-    const result = await fetchAssetByLookup(lookup);
-
-    if (result.error) {
-      setError(`Data aset tidak dapat diperiksa: ${result.error}`);
+    const result = await lookupAndOpenAsset(lookup);
+    if (!result.success) {
+      setError(result.message ?? "Aset tidak ditemukan.");
       setLoading(false);
-      return;
     }
-
-    if (!result.asset) {
-      setError("Aset tidak ditemukan. Pastikan kode atau payload QR benar.");
-      setLoading(false);
-      return;
-    }
-
-    router.push(`/assets/${encodeURIComponent(result.asset.code)}`);
   }
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-md space-y-6">
+      <div className="mx-auto max-w-2xl space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">
             Scan QR / Input Kode Aset
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Cari alat atau fasilitas berdasarkan data asset di Supabase.
+            Pindai QR Code atau cari alat dan fasilitas berdasarkan data aset di
+            Supabase.
           </p>
         </div>
+
+        <QrCameraScanner onDecoded={lookupAndOpenAsset} />
 
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="mb-6 flex flex-col items-center gap-4">
             <div className="rounded-full bg-emerald-100 p-4">
-              <QrCode className="h-10 w-10 text-emerald-600" />
+              <Keyboard className="h-10 w-10 text-emerald-600" />
             </div>
+            <h2 className="text-lg font-semibold text-slate-900">Input Manual</h2>
             <p className="text-center text-sm text-slate-500">
-              Masukkan kode aset atau payload QR untuk membuka detail aset.
+              Gunakan kode aset atau payload QR jika kamera tidak tersedia.
             </p>
           </div>
 
@@ -128,9 +146,8 @@ export default function ScanPage() {
           <div className="mt-5 flex items-start gap-2 rounded-md border border-sky-100 bg-sky-50 p-3 text-xs text-sky-800">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              Pemindaian kamera QR belum diaktifkan. Integrasi kamera akan
-              ditambahkan pada tahap berikutnya; input manual tetap tersedia
-              sebagai fallback.
+              Akses kamera membutuhkan izin browser dan koneksi HTTPS saat
+              aplikasi di-deploy. Input manual tetap tersedia sebagai fallback.
             </p>
           </div>
         </div>
