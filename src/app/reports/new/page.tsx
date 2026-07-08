@@ -21,6 +21,15 @@ import {
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import { getReportEvidenceBucket } from "@/lib/storage";
 
+type AIRecommendationProvider = "fallback" | "openai" | "gemini" | "deepseek";
+
+interface AIRecommendationResponse {
+  recommendation: string;
+  provider: AIRecommendationProvider;
+  riskScore: number;
+  riskCategory: string;
+}
+
 function NewReportFallback() {
   return (
     <AppShell>
@@ -58,6 +67,10 @@ function NewReportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdReportId, setCreatedReportId] = useState("");
   const [attachmentWarning, setAttachmentWarning] = useState("");
+  const [aiRecommendation, setAiRecommendation] = useState("");
+  const [aiProvider, setAiProvider] = useState<AIRecommendationProvider | "">("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -101,11 +114,72 @@ function NewReportPage() {
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
   const previewRisk = calculateRiskScore({ severity, probability, exposure });
 
+  function clearAiState() {
+    setAiRecommendation("");
+    setAiProvider("");
+    setAiError("");
+  }
+
   function handleAssetChange(assetId: string) {
     setSelectedAssetId(assetId);
     setError("");
+    clearAiState();
     const asset = assets.find((item) => item.id === assetId);
     setLocation(asset?.location ?? asset?.laboratory?.location ?? "");
+  }
+
+  async function handleGenerateAiRecommendation() {
+    setError("");
+    setAiError("");
+    setAiRecommendation("");
+    setAiProvider("");
+
+    if (!title.trim() || !description.trim() || !location.trim()) {
+      setAiError("Isi judul, deskripsi, dan lokasi sebelum membuat rekomendasi AI.");
+      return;
+    }
+
+    setAiLoading(true);
+
+    try {
+      const response = await fetch("/api/ai/risk-recommendation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "report",
+          title,
+          description,
+          assetName: selectedAsset?.name ?? null,
+          location,
+          severity,
+          probability,
+          exposure,
+          riskScore: previewRisk.score,
+          riskCategory: previewRisk.category,
+        }),
+      });
+
+      const data = (await response.json()) as Partial<AIRecommendationResponse> & {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setAiError(data.error ?? "Rekomendasi AI gagal dibuat.");
+        return;
+      }
+
+      if (!data.recommendation || !data.provider) {
+        setAiError("Response rekomendasi AI tidak lengkap.");
+        return;
+      }
+
+      setAiRecommendation(data.recommendation);
+      setAiProvider(data.provider);
+    } catch {
+      setAiError("Rekomendasi AI gagal dibuat. Coba lagi nanti.");
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   function handleEvidenceChange(file: File | null, input: HTMLInputElement) {
@@ -197,6 +271,9 @@ function NewReportPage() {
     setError("");
     setAttachmentWarning("");
     setCreatedReportId("");
+    setAiRecommendation("");
+    setAiProvider("");
+    setAiError("");
   }
 
   if (createdReportId) {
@@ -323,7 +400,10 @@ function NewReportPage() {
                 id="report-title"
                 type="text"
                 value={title}
-                onChange={(event) => setTitle(event.target.value)}
+                onChange={(event) => {
+                  setTitle(event.target.value);
+                  clearAiState();
+                }}
                 placeholder="Contoh: Kabel mesin bor terkelupas"
                 required
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
@@ -340,7 +420,10 @@ function NewReportPage() {
               <textarea
                 id="report-description"
                 value={description}
-                onChange={(event) => setDescription(event.target.value)}
+                onChange={(event) => {
+                  setDescription(event.target.value);
+                  clearAiState();
+                }}
                 rows={4}
                 placeholder="Jelaskan detail bahaya yang ditemukan..."
                 required
@@ -359,7 +442,10 @@ function NewReportPage() {
                 id="report-location"
                 type="text"
                 value={location}
-                onChange={(event) => setLocation(event.target.value)}
+                onChange={(event) => {
+                  setLocation(event.target.value);
+                  clearAiState();
+                }}
                 required
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               />
@@ -380,7 +466,10 @@ function NewReportPage() {
                   min={1}
                   max={5}
                   value={severity}
-                  onChange={(event) => setSeverity(Number(event.target.value))}
+                  onChange={(event) => {
+                    setSeverity(Number(event.target.value));
+                    clearAiState();
+                  }}
                   className="w-full accent-emerald-600"
                 />
               </div>
@@ -394,7 +483,10 @@ function NewReportPage() {
                   min={1}
                   max={5}
                   value={probability}
-                  onChange={(event) => setProbability(Number(event.target.value))}
+                  onChange={(event) => {
+                    setProbability(Number(event.target.value));
+                    clearAiState();
+                  }}
                   className="w-full accent-emerald-600"
                 />
               </div>
@@ -408,7 +500,10 @@ function NewReportPage() {
                   min={1}
                   max={5}
                   value={exposure}
-                  onChange={(event) => setExposure(Number(event.target.value))}
+                  onChange={(event) => {
+                    setExposure(Number(event.target.value));
+                    clearAiState();
+                  }}
                   className="w-full accent-emerald-600"
                 />
               </div>
@@ -435,6 +530,50 @@ function NewReportPage() {
               <p className="mt-1 text-xs text-slate-500">
                 {previewRisk.recommendation}
               </p>
+            </div>
+
+            <div className="rounded-md border border-emerald-100 bg-emerald-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-emerald-950">
+                    Rekomendasi AI-Assisted
+                  </h3>
+                  <p className="mt-1 text-xs text-emerald-800">
+                    Membantu menyusun tindak lanjut tanpa mengubah skor risiko utama.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleGenerateAiRecommendation}
+                  disabled={aiLoading || submitting}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                >
+                  {aiLoading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Membuat...
+                    </>
+                  ) : (
+                    "Buat Rekomendasi AI"
+                  )}
+                </button>
+              </div>
+
+              {aiError && (
+                <p role="alert" className="mt-3 text-sm text-red-700">
+                  {aiError}
+                </p>
+              )}
+
+              {aiRecommendation && (
+                <div className="mt-4 rounded-md border border-emerald-200 bg-white p-3">
+                  <p className="text-sm text-slate-700">{aiRecommendation}</p>
+                  {aiProvider === "fallback" && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      Rekomendasi fallback digunakan karena provider AI tidak tersedia.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           </section>
 
