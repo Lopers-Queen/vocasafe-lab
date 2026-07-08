@@ -8,6 +8,7 @@ import {
   Database,
   Loader2,
   Package,
+  Save,
   ShieldCheck,
   Users,
 } from "lucide-react";
@@ -15,9 +16,11 @@ import AppShell from "@/components/AppShell";
 import { getRoleLabel } from "@/lib/auth";
 import {
   fetchAdminData,
+  updateUserProfileAccess,
   type AdminData,
   type AdminUserProfile,
 } from "@/lib/admin";
+import type { UserRole } from "@/types";
 
 const EMPTY_DATA: AdminData = {
   profiles: [],
@@ -48,7 +51,125 @@ function formatDate(value: string | null): string {
   });
 }
 
-function ProfileCard({ profile }: { profile: AdminUserProfile }) {
+const roleOptions: { value: UserRole; label: string }[] = [
+  { value: "mahasiswa", label: "Mahasiswa" },
+  { value: "dosen", label: "Dosen" },
+  { value: "teknisi", label: "Teknisi/Laboran" },
+  { value: "kepala_lab", label: "Kepala Laboratorium" },
+  { value: "admin", label: "Admin Sistem" },
+];
+
+function ProfileAccessEditor({
+  profile,
+  currentUserId,
+  onUpdated,
+}: {
+  profile: AdminUserProfile;
+  currentUserId: string | null;
+  onUpdated: () => Promise<void>;
+}) {
+  const [role, setRole] = useState<UserRole>(profile.role);
+  const [isActive, setIsActive] = useState(profile.isActive);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const isOwnProfile = profile.id === currentUserId;
+  const changed = role !== profile.role || isActive !== profile.isActive;
+
+  async function handleSave() {
+    setFeedback("");
+    setSaving(true);
+    const result = await updateUserProfileAccess({
+      profileId: profile.id,
+      role,
+      isActive,
+    });
+
+    if (result.error) {
+      setFeedback(result.error);
+      setSaving(false);
+      return;
+    }
+
+    await onUpdated();
+    setFeedback("Akses profil berhasil diperbarui.");
+    setSaving(false);
+  }
+
+  if (isOwnProfile) {
+    return (
+      <p className="text-xs font-medium text-slate-500">
+        Tidak dapat mengubah role/status akun sendiri.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className="text-xs font-medium text-slate-600">
+          Role
+          <select
+            value={role}
+            onChange={(event) => setRole(event.target.value as UserRole)}
+            disabled={saving}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+          >
+            {roleOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs font-medium text-slate-600">
+          Status
+          <select
+            value={isActive ? "active" : "inactive"}
+            onChange={(event) => setIsActive(event.target.value === "active")}
+            disabled={saving}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 disabled:bg-slate-100"
+          >
+            <option value="active">Aktif</option>
+            <option value="inactive">Nonaktif</option>
+          </select>
+        </label>
+      </div>
+      <button
+        type="button"
+        onClick={() => void handleSave()}
+        disabled={saving || !changed}
+        className="inline-flex min-h-9 items-center justify-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+      >
+        {saving ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Save className="h-3.5 w-3.5" />
+        )}
+        Simpan Akses
+      </button>
+      {feedback && (
+        <p
+          role={feedback.includes("berhasil") ? "status" : "alert"}
+          className={`text-xs ${
+            feedback.includes("berhasil") ? "text-emerald-700" : "text-red-700"
+          }`}
+        >
+          {feedback}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProfileCard({
+  profile,
+  currentUserId,
+  onUpdated,
+}: {
+  profile: AdminUserProfile;
+  currentUserId: string | null;
+  onUpdated: () => Promise<void>;
+}) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -82,6 +203,14 @@ function ProfileCard({ profile }: { profile: AdminUserProfile }) {
           </dd>
         </div>
       </dl>
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <ProfileAccessEditor
+          key={`${profile.id}-${profile.role}-${profile.isActive}`}
+          profile={profile}
+          currentUserId={currentUserId}
+          onUpdated={onUpdated}
+        />
+      </div>
     </article>
   );
 }
@@ -99,6 +228,15 @@ export default function AdminPage() {
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  async function refreshAdminData() {
+    const result = await fetchAdminData();
+    setData(result.data);
+    setErrors(result.errors);
+    setAuthorized(result.authorized);
+    setCurrentUserId(result.currentUserId);
+  }
 
   useEffect(() => {
     let active = true;
@@ -108,6 +246,7 @@ export default function AdminPage() {
       setData(result.data);
       setErrors(result.errors);
       setAuthorized(result.authorized);
+      setCurrentUserId(result.currentUserId);
       setLoading(false);
     });
 
@@ -182,11 +321,11 @@ export default function AdminPage() {
               </div>
 
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
-                <p className="font-semibold">Manajemen profil masih read-only.</p>
+                <p className="font-semibold">Kontrol akses profil</p>
                 <p className="mt-1">
-                  Policy RLS saat ini mengizinkan admin membaca seluruh profil,
-                  tetapi belum mengizinkan perubahan role atau status aktif.
-                  Pengaturan ini akan dibahas pada D4-13.
+                  Admin dapat mengubah role dan status aktif user lain setelah
+                  migration D4-13 diterapkan. Akun sendiri dilindungi dari
+                  perubahan role dan status.
                 </p>
               </div>
 
@@ -196,7 +335,12 @@ export default function AdminPage() {
                 <>
                   <div className="grid gap-3 md:hidden">
                     {data.profiles.map((profile) => (
-                      <ProfileCard key={profile.id} profile={profile} />
+                      <ProfileCard
+                        key={profile.id}
+                        profile={profile}
+                        currentUserId={currentUserId}
+                        onUpdated={refreshAdminData}
+                      />
                     ))}
                   </div>
                   <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white md:block">
@@ -208,6 +352,7 @@ export default function AdminPage() {
                           <th className="px-4 py-3">Role</th>
                           <th className="px-4 py-3">Status</th>
                           <th className="px-4 py-3">Dibuat</th>
+                          <th className="min-w-80 px-4 py-3">Kelola Akses</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -235,6 +380,14 @@ export default function AdminPage() {
                             </td>
                             <td className="px-4 py-3 text-slate-600">
                               {formatDate(profile.createdAt)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <ProfileAccessEditor
+                                key={`${profile.id}-${profile.role}-${profile.isActive}`}
+                                profile={profile}
+                                currentUserId={currentUserId}
+                                onUpdated={refreshAdminData}
+                              />
                             </td>
                           </tr>
                         ))}

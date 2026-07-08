@@ -50,6 +50,13 @@ export interface AdminData {
   checklistItems: AdminChecklistItem[];
 }
 
+export interface AdminDataResult {
+  data: AdminData;
+  errors: string[];
+  authorized: boolean;
+  currentUserId: string | null;
+}
+
 interface UserProfileRow {
   id: string;
   full_name: string;
@@ -101,11 +108,7 @@ function errorMessage(error: unknown): string {
   return "Data admin tidak dapat dimuat dari Supabase.";
 }
 
-export async function fetchAdminData(): Promise<{
-  data: AdminData;
-  errors: string[];
-  authorized: boolean;
-}> {
+export async function fetchAdminData(): Promise<AdminDataResult> {
   try {
     const { user, error: profileError } = await getCurrentUserProfile();
 
@@ -114,6 +117,7 @@ export async function fetchAdminData(): Promise<{
         data: EMPTY_ADMIN_DATA,
         errors: [profileError ?? "Sesi pengguna tidak ditemukan."],
         authorized: false,
+        currentUserId: null,
       };
     }
 
@@ -122,6 +126,7 @@ export async function fetchAdminData(): Promise<{
         data: EMPTY_ADMIN_DATA,
         errors: ["Akses halaman admin hanya tersedia untuk Admin Sistem."],
         authorized: false,
+        currentUserId: user.id,
       };
     }
 
@@ -190,12 +195,74 @@ export async function fetchAdminData(): Promise<{
       },
       errors,
       authorized: true,
+      currentUserId: user.id,
     };
   } catch (error) {
     return {
       data: EMPTY_ADMIN_DATA,
       errors: [errorMessage(error)],
       authorized: false,
+      currentUserId: null,
     };
+  }
+}
+
+const VALID_USER_ROLES = new Set<UserRole>([
+  "mahasiswa",
+  "dosen",
+  "teknisi",
+  "kepala_lab",
+  "admin",
+]);
+
+function adminUpdateError(error: { code?: string; message: string }): string {
+  const normalized = error.message.toLowerCase();
+  if (
+    error.code === "42501" ||
+    normalized.includes("row-level security") ||
+    normalized.includes("permission denied")
+  ) {
+    return "Aksi ditolak oleh kebijakan akses database.";
+  }
+  return error.message;
+}
+
+export async function updateUserProfileAccess(input: {
+  profileId: string;
+  role: UserRole;
+  isActive: boolean;
+}): Promise<{ error: string | null }> {
+  if (!input.profileId) return { error: "Profil pengguna tidak valid." };
+  if (!VALID_USER_ROLES.has(input.role)) return { error: "Role tidak valid." };
+
+  try {
+    const { user, error: profileError } = await getCurrentUserProfile();
+    if (!user || profileError) {
+      return { error: profileError ?? "Sesi pengguna tidak ditemukan." };
+    }
+    if (user.role !== "admin") {
+      return { error: "Aksi ditolak oleh kebijakan akses database." };
+    }
+    if (user.id === input.profileId) {
+      return { error: "Tidak dapat mengubah role/status akun sendiri." };
+    }
+
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("user_profiles")
+      .update({
+        role: input.role,
+        is_active: input.isActive,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", input.profileId)
+      .select("id")
+      .maybeSingle();
+
+    if (error) return { error: adminUpdateError(error) };
+    if (!data) return { error: "Aksi ditolak oleh kebijakan akses database." };
+    return { error: null };
+  } catch (error) {
+    return { error: errorMessage(error) };
   }
 }

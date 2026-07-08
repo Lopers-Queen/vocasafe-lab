@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { getCurrentUserProfile } from "@/lib/auth";
-import { canEditReportStatus } from "@/lib/role-access";
 import {
   fetchReportById,
   fetchReportFollowUps,
@@ -122,7 +121,7 @@ export default function ReportDetailPage() {
   }, [id]);
 
   const canUpdate = currentUser
-    ? canEditReportStatus(currentUser.role)
+    ? ["teknisi", "kepala_lab", "admin"].includes(currentUser.role)
     : false;
 
   async function handleSaveFollowUp(event: React.FormEvent<HTMLFormElement>) {
@@ -520,8 +519,8 @@ export default function ReportDetailPage() {
             </form>
           ) : (
             <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-500">
-              Hanya teknisi atau admin yang dapat memperbarui status dan menambah
-              tindak lanjut.
+              Hanya teknisi, kepala laboratorium, atau admin yang dapat
+              memperbarui status dan menambah tindak lanjut.
             </p>
           )}
         </section>

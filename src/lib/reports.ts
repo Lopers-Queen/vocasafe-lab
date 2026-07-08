@@ -437,11 +437,15 @@ export async function saveReportFollowUp(input: {
     }
 
     const profile = profileData as ProfileRoleRow;
-    if (!profile.is_active || !["teknisi", "admin"].includes(profile.role)) {
+    if (
+      !profile.is_active ||
+      !["teknisi", "kepala_lab", "admin"].includes(profile.role)
+    ) {
       return {
         followUp: null,
         statusUpdated: false,
-        error: "Hanya teknisi atau admin yang dapat memperbarui laporan.",
+        error:
+          "Hanya teknisi, kepala laboratorium, atau admin yang dapat memperbarui laporan.",
       };
     }
 
