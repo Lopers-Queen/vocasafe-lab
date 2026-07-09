@@ -1,44 +1,51 @@
 # VocaSafe Lab
 
-VocaSafe Lab adalah prototype sistem audit K3 dan manajemen risiko laboratorium vokasi berbasis QR Code dan AI-Assisted Risk Scoring.
+VocaSafe Lab adalah prototype sistem audit K3 dan manajemen risiko laboratorium vokasi berbasis QR Code, Supabase, dan AI-assisted risk recommendation.
 
-Prototype ini dirancang untuk demo hackathon, bahan screenshot/mockup proposal, dan validasi alur kerja K3 laboratorium vokasi. Data masih menggunakan dummy data dan localStorage.
+Status saat ini adalah **D4 production-like migration** untuk demo hackathon dan validasi alur kerja K3. Aplikasi sudah memakai Supabase Auth, Supabase Database, Supabase Storage, RLS hardening, QR camera scanner, dan AI recommendation fallback. Risk score utama tetap rule-based.
 
 ## Fitur Utama
 
-- Dummy login role
-- Dashboard monitoring
-- Data alat/fasilitas
-- Detail asset + QR Code
-- Simulasi scan QR
-- SOP digital
-- Form laporan bahaya
-- Risk scoring severity x probability x exposure
-- Daftar laporan
-- Tindak lanjut laporan
-- Checklist K3
-- Audit report
+- Supabase Auth dengan role dari tabel `user_profiles`
+- Route guard berbasis role
+- Dashboard monitoring dari data Supabase
+- Data alat/fasilitas dan SOP dari Supabase
+- Detail asset dengan SOP digital dan QR Code
+- Scan QR manual dan camera-based QR scanner
+- Form laporan bahaya dengan risk scoring
+- Upload foto bukti ke Supabase Storage bucket private `report-evidence`
+- Detail laporan dengan signed URL evidence
+- Update status laporan dan tindak lanjut oleh role yang berwenang
+- Checklist K3 dari template dan item Supabase
+- Checklist dengan temuan risiko dan tanpa temuan risiko
+- Audit report dari data Supabase
 - Export CSV
-- Print / Save as PDF
+- Print / Save as PDF via browser print
+- Admin management page untuk user profiles dan data dasar
+- AI-assisted recommendation provider-agnostic dengan fallback rule-based
 
 ## Stack
 
 - Next.js App Router
 - TypeScript
 - Tailwind CSS
-- LocalStorage
+- Supabase Auth
+- Supabase Database
+- Supabase Storage
+- Row Level Security
 - qrcode.react
+- html5-qrcode
 - lucide-react
 
-## Role Demo
+## Role Aplikasi
 
 - Mahasiswa
 - Dosen
 - Teknisi/Laboran
 - Kepala Laboratorium
-- Admin
+- Admin Sistem
 
-## Hak Akses Role
+## Hak Akses Route
 
 | Route | Mahasiswa | Dosen | Teknisi | Kepala Lab | Admin |
 |---|---:|---:|---:|---:|---:|
@@ -52,8 +59,16 @@ Prototype ini dirancang untuk demo hackathon, bahan screenshot/mockup proposal, 
 | `/checklists` | Tidak | Ya | Ya | Tidak | Ya |
 | `/checklists/new` | Tidak | Ya | Ya | Tidak | Ya |
 | `/audit` | Tidak | Tidak | Ya | Ya | Ya |
+| `/admin` | Tidak | Tidak | Tidak | Tidak | Ya |
 
-Hanya `teknisi` dan `admin` yang dapat mengubah status laporan dan menambahkan catatan tindak lanjut.
+## Hak Akses Operasional
+
+- Mahasiswa dan dosen dapat membuat dan melihat laporan sesuai policy RLS.
+- Teknisi, kepala laboratorium, dan admin dapat melihat laporan lintas user sesuai policy RLS.
+- Teknisi, kepala laboratorium, dan admin dapat mengubah status laporan dan menambah tindak lanjut.
+- Dosen, teknisi, dan admin dapat mengisi checklist.
+- Kepala laboratorium dapat membaca hasil checklist untuk konteks audit, tetapi tidak mengisi checklist.
+- Admin dapat melihat halaman `/admin` dan mengubah role/status user lain. Akun admin sendiri dilindungi dari self-demotion/self-deactivation.
 
 ## Status Laporan
 
@@ -67,7 +82,7 @@ Status laporan resmi:
 
 ## Risk Scoring
 
-Rumus risk scoring:
+Risk score utama selalu dihitung secara rule-based:
 
 ```text
 Risk Score = Severity x Probability x Exposure
@@ -94,6 +109,8 @@ Risk Score = 5 x 4 x 5 = 100
 Kategori = kritis
 ```
 
+AI recommendation tidak menghitung ulang dan tidak mengganti risk score. Jika provider AI tidak tersedia, aplikasi memakai fallback rule-based.
+
 ## Cara Menjalankan Lokal
 
 ```bash
@@ -107,39 +124,82 @@ Buka aplikasi di browser melalui URL yang ditampilkan Next.js, biasanya:
 http://localhost:3000
 ```
 
-Validasi sebelum deploy:
+Validasi sebelum review atau deploy:
 
 ```bash
 npm run typecheck
 npm run build
 ```
 
-## Data Prototype
+`npm run lint` saat ini masih memiliki known issue di `src/components/AppShell.tsx` untuk rule `react-hooks/set-state-in-effect`. Issue ini tercatat sebagai non-blocking untuk D4.
 
-Prototype ini belum memakai backend production. Data demo terdiri dari:
+## Environment
 
-- Dummy data untuk user, asset, SOP, checklist template, dan laporan awal
-- localStorage untuk laporan baru, tindak lanjut, dan hasil checklist lokal
+Gunakan `.env.local` untuk development lokal dan jangan commit file tersebut.
 
-Key localStorage utama:
+Variabel utama:
 
-- `vocasafe_current_user`
-- `vocasafe_reports`
-- `vocasafe_checklist_results`
+```env
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_STORAGE_BUCKET=report-evidence
+AI_PROVIDER=none
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+DEEPSEEK_API_KEY=
+```
+
+Catatan:
+
+- Secret AI key bersifat server-only.
+- Jangan menaruh secret pada variabel `NEXT_PUBLIC_*`.
+- `SUPABASE_SERVICE_ROLE_KEY` hanya dipakai bila ada operasi server-only admin yang benar-benar membutuhkan, dan tidak boleh masuk Client Component.
+
+## Sumber Data D4
+
+Untuk route D4 aktif, sumber utama adalah Supabase:
+
+- Auth dan role: `auth.users` + `public.user_profiles`
+- Asset/SOP/fasilitas K3: Supabase Database
+- Reports/follow-up/attachments: Supabase Database
+- Evidence image: Supabase Storage bucket private `report-evidence`
+- Checklist templates/items/results: Supabase Database
+- Dashboard/audit/admin summary: Supabase Database
+
+File dummy dan helper localStorage lama masih ada sebagai artefak legacy/non-runtime, tetapi bukan sumber utama route D4 aktif.
+
+## Setup Supabase Ringkas
+
+Sebelum deploy ke environment baru:
+
+1. Jalankan migration `supabase/migrations/001_initial_d4_schema.sql`.
+2. Jalankan seed `supabase/seed/001_seed_initial_data.sql`.
+3. Buat admin user pertama secara manual di Supabase Auth dan `public.user_profiles`.
+4. Buat bucket private `report-evidence`.
+5. Jalankan migration `supabase/migrations/002_d4_rls_hardening.sql`.
+6. Pastikan policy RLS dan Storage sudah diuji untuk role utama.
+
+Detail ada di:
+
+- `docs/supabase-setup.md`
+- `docs/supabase-storage.md`
+- `docs/rls-hardening.md`
+- `docs/deploy-preparation.md`
 
 ## Catatan Prototype
 
-- Belum memakai Supabase
-- Belum memakai API AI
-- Belum memakai kamera QR sungguhan
-- Belum memakai upload server/storage
-- Belum memakai library PDF eksternal
-- Export PDF menggunakan fitur browser Print / Save as PDF
-- Semua data demo memakai dummy data dan localStorage
+- Aplikasi sudah production-like untuk demo D4, tetapi belum diklaim production-ready penuh.
+- RLS sudah diperketat pada D4-13, tetapi tetap perlu review lingkungan target sebelum production.
+- Signed URL evidence memiliki masa berlaku terbatas.
+- Export PDF memakai fitur browser Print / Save as PDF, bukan library PDF eksternal.
+- AI-assisted recommendation harus direview manusia sebelum menjadi keputusan akhir.
 
 ## Dokumentasi Tambahan
 
-- Demo script: `docs/demo-script.md`
+- Deploy preparation: `docs/deploy-preparation.md`
+- Supabase setup: `docs/supabase-setup.md`
+- Supabase storage: `docs/supabase-storage.md`
+- RLS hardening: `docs/rls-hardening.md`
+- AI recommendation: `docs/ai-recommendation.md`
 - Testing checklist: `docs/testing-checklist.md`
-- Release notes: `docs/release-notes.md`
-- Project summary: `docs/project-summary.md`
+- Demo script: `docs/demo-script.md`

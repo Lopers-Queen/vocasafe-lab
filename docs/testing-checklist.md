@@ -1,26 +1,29 @@
-# Final Testing Checklist VocaSafe Lab
+# Final Testing Checklist VocaSafe Lab D4
 
-Gunakan checklist ini sebelum deploy, presentasi, atau pengambilan screenshot proposal.
+Gunakan checklist ini sebelum merge, deploy, presentasi, atau pengambilan screenshot proposal. Checklist ini mengikuti kondisi D4 production-like: Supabase Auth, Supabase Database, Supabase Storage, RLS hardening, QR camera scanner, dan AI recommendation fallback sudah aktif.
 
-## 1. Route
+## 1. Validasi Awal
 
-- [ ] `/` dapat dibuka.
+- [ ] Branch aktif `feature/d4-production-like-migration`.
+- [ ] Working tree clean.
+- [ ] PR terbuka dan belum merge.
+- [ ] `.env.local` tidak tracked oleh Git.
+- [ ] `npm run typecheck` lulus.
+- [ ] `npm run build` lulus.
+- [ ] `npm run lint` dicatat sebagai known issue jika masih gagal di `src/components/AppShell.tsx` rule `react-hooks/set-state-in-effect`.
+
+## 2. Auth dan Route Guard
+
+- [ ] `/` dapat dibuka tanpa login.
 - [ ] `/login` dapat dibuka.
-- [ ] `/dashboard` dapat dibuka setelah login.
-- [ ] `/assets` menampilkan daftar asset.
-- [ ] `/assets/AST-001` menampilkan detail asset valid.
-- [ ] `/scan` menampilkan simulasi scan QR.
-- [ ] `/reports` menampilkan daftar laporan.
-- [ ] `/reports/new` menampilkan form laporan.
-- [ ] `/reports/new?assetId=AST-001` otomatis memilih asset AST-001.
-- [ ] `/reports/[id]` dengan ID valid menampilkan detail laporan.
-- [ ] `/checklists` menampilkan checklist dan hasil lokal.
-- [ ] `/checklists/new` menampilkan form checklist.
-- [ ] `/checklists/new?assetId=AST-001` otomatis memilih asset AST-001.
-- [ ] `/audit` menampilkan audit report.
-- [ ] Unknown ID ditangani dengan pesan tidak ditemukan.
+- [ ] `/dashboard` tanpa login diarahkan atau diblokir ke `/login`.
+- [ ] Login admin Supabase berhasil.
+- [ ] Logout berhasil dan session dibersihkan.
+- [ ] User tanpa row `user_profiles` ditolak dengan pesan jelas.
+- [ ] User inactive ditolak dengan pesan jelas.
+- [ ] Role dibaca dari `user_profiles`, bukan dummy role/localStorage.
 
-## 2. Role Access
+## 3. Role Access
 
 ### Mahasiswa
 
@@ -29,10 +32,11 @@ Gunakan checklist ini sebelum deploy, presentasi, atau pengambilan screenshot pr
 - [ ] Bisa akses `/assets`.
 - [ ] Bisa akses `/reports`.
 - [ ] Bisa akses `/reports/new`.
+- [ ] Tidak bisa akses `/admin`.
 - [ ] Tidak bisa akses `/checklists`.
 - [ ] Tidak bisa akses `/checklists/new`.
 - [ ] Tidak bisa akses `/audit`.
-- [ ] Tidak melihat kontrol ubah status laporan.
+- [ ] Tidak melihat kontrol update status/follow-up laporan.
 
 ### Dosen
 
@@ -43,8 +47,9 @@ Gunakan checklist ini sebelum deploy, presentasi, atau pengambilan screenshot pr
 - [ ] Bisa akses `/reports/new`.
 - [ ] Bisa akses `/checklists`.
 - [ ] Bisa akses `/checklists/new`.
+- [ ] Tidak bisa akses `/admin`.
 - [ ] Tidak bisa akses `/audit`.
-- [ ] Tidak melihat kontrol ubah status laporan.
+- [ ] Tidak melihat kontrol update status/follow-up laporan.
 
 ### Teknisi/Laboran
 
@@ -56,6 +61,7 @@ Gunakan checklist ini sebelum deploy, presentasi, atau pengambilan screenshot pr
 - [ ] Bisa akses `/checklists`.
 - [ ] Bisa akses `/checklists/new`.
 - [ ] Bisa akses `/audit`.
+- [ ] Tidak bisa akses `/admin`.
 - [ ] Bisa mengubah status laporan.
 - [ ] Bisa menyimpan catatan tindak lanjut.
 
@@ -69,111 +75,174 @@ Gunakan checklist ini sebelum deploy, presentasi, atau pengambilan screenshot pr
 - [ ] Tidak bisa akses `/reports/new`.
 - [ ] Tidak bisa akses `/checklists`.
 - [ ] Tidak bisa akses `/checklists/new`.
-- [ ] Tidak melihat kontrol ubah status laporan.
+- [ ] Tidak bisa akses `/admin`.
+- [ ] Bisa melihat laporan lintas user sesuai RLS.
+- [ ] Bisa mengubah status laporan dan menambah follow-up sesuai D4-13 RLS.
 
 ### Admin
 
 - [ ] Bisa akses semua route.
 - [ ] Bisa mengubah status laporan.
 - [ ] Bisa menyimpan catatan tindak lanjut.
+- [ ] Bisa membuka `/admin`.
+- [ ] Bisa update role/status user lain lalu restore.
+- [ ] Tidak bisa mengubah role/status akun sendiri.
 
-## 3. Risk Scoring
+## 4. Dashboard Supabase
 
-- [ ] Form laporan memiliki field severity.
-- [ ] Form laporan memiliki field probability.
-- [ ] Form laporan memiliki field exposure.
-- [ ] Tidak ada field likelihood.
-- [ ] Tidak ada field controlCondition.
-- [ ] Tidak ada field isRecurring.
-- [ ] Input 5, 4, 5 menghasilkan score 100.
-- [ ] Input 5, 4, 5 menghasilkan category kritis.
-- [ ] Threshold kategori sesuai:
-  - [ ] 1-20 rendah
-  - [ ] 21-50 sedang
-  - [ ] 51-80 tinggi
-  - [ ] 81-125 kritis
+- [ ] `/dashboard` tampil setelah login.
+- [ ] Total asset sesuai tabel Supabase.
+- [ ] Total laporan sesuai tabel Supabase yang terlihat oleh RLS.
+- [ ] Total checklist sesuai tabel Supabase yang terlihat oleh RLS.
+- [ ] Latest reports tampil dari Supabase.
+- [ ] Latest checklist results tampil dari Supabase.
+- [ ] Tidak ada console error fatal.
 
-## 4. Laporan Bahaya
+## 5. Assets, SOP, dan QR
 
-- [ ] `/reports/new?assetId=AST-001` otomatis memilih AST-001.
-- [ ] Submit form valid menyimpan laporan ke `vocasafe_reports`.
-- [ ] Laporan baru tampil di `/reports`.
-- [ ] Laporan baru ikut dihitung di `/dashboard`.
-- [ ] Laporan baru ikut tampil di `/audit`.
-- [ ] Status awal laporan baru adalah `baru`.
+- [ ] `/assets` menampilkan AST-001, AST-002, AST-003 dari Supabase.
+- [ ] Nama laboratorium tampil.
+- [ ] Status aset tampil benar.
+- [ ] Search/filter asset berjalan jika tersedia.
+- [ ] `/assets/AST-001` menampilkan detail asset.
+- [ ] SOP Penggunaan Mesin Bor tampil untuk AST-001.
+- [ ] APD dan langkah SOP tampil.
+- [ ] QR Code tampil.
+- [ ] QR payload mengarah ke `vocasafe://assets/AST-001` atau detail asset yang sesuai.
+- [ ] Link laporan bahaya mengarah ke `/reports/new?assetId=AST-001`.
+- [ ] Unknown asset ditangani rapi.
+- [ ] Tidak ada console error fatal.
 
-## 5. Follow-Up Laporan
+## 6. Scan QR
 
-- [ ] Login sebagai teknisi.
-- [ ] Buka detail laporan.
-- [ ] Dropdown status mengikuti `report.status`.
-- [ ] Ubah status menjadi `dalam_penanganan`.
-- [ ] Simpan catatan tindak lanjut.
-- [ ] Reload halaman.
-- [ ] Status tetap `dalam_penanganan`.
-- [ ] Simpan catatan kedua tanpa status mundur ke `diverifikasi`.
-- [ ] Ubah status menjadi `selesai`.
-- [ ] Reload halaman.
-- [ ] Status tetap `selesai`.
+- [ ] `/scan` tampil untuk role yang berhak.
+- [ ] Input manual `AST-001` redirect ke `/assets/AST-001`.
+- [ ] Input manual `vocasafe://assets/AST-001` redirect ke `/assets/AST-001`.
+- [ ] Input `UNKNOWN` menampilkan error rapi.
+- [ ] Camera QR scan berhasil jika perangkat/kamera tersedia.
+- [ ] Input manual tetap tersedia sebagai fallback.
+- [ ] Tidak ada console error fatal.
 
-## 6. Checklist
+## 7. Reports dan Evidence Storage
 
+- [ ] `/reports` menampilkan laporan dari Supabase.
+- [ ] `/reports/new?assetId=AST-001` otomatis memilih asset AST-001 dari Supabase.
+- [ ] Form laporan memakai asset UUID untuk insert, code hanya untuk display.
+- [ ] Input severity 5, probability 4, exposure 5 menghasilkan score 100.
+- [ ] Score 100 berkategori kritis.
+- [ ] Rekomendasi rule-based kategori kritis benar.
+- [ ] Tombol `Buat Rekomendasi AI` menampilkan fallback tanpa API key.
+- [ ] Submit laporan tanpa foto berhasil.
+- [ ] Detail laporan tampil.
+- [ ] Submit laporan dengan foto JPG/PNG/WebP berhasil.
+- [ ] Evidence masuk bucket private `report-evidence`.
+- [ ] Metadata evidence masuk `report_attachments`.
+- [ ] Evidence tampil melalui signed URL di detail laporan.
+- [ ] Tidak ada console error fatal.
+
+## 8. Report Follow-Up dan Role Manager
+
+- [ ] Role manager membuka detail laporan.
+- [ ] Kontrol update status/follow-up tampil untuk role yang berhak.
+- [ ] Status dapat diubah ke `diverifikasi`.
+- [ ] Status dapat diubah ke `dalam_penanganan`.
+- [ ] Status dapat diubah ke `selesai` jika diperlukan.
+- [ ] Catatan follow-up tersimpan ke Supabase.
+- [ ] Riwayat follow-up tampil setelah reload.
+- [ ] Status dropdown mengikuti status laporan terakhir setelah reload.
+- [ ] Reporter/mahasiswa dapat melihat laporan sendiri.
+- [ ] Reporter/mahasiswa tidak melihat kontrol update status/follow-up.
+- [ ] Tidak ada console error fatal.
+
+## 9. Checklist K3
+
+- [ ] `/checklists` menampilkan template aktif dan hasil checklist dari Supabase.
 - [ ] `/checklists/new?assetId=AST-001` otomatis memilih AST-001.
-- [ ] Checklist template dapat dipilih.
-- [ ] Item checklist dapat dijawab Ya/Tidak/N/A.
-- [ ] Opsi "Ada temuan risiko?" tampil.
-- [ ] Jika temuan risiko = Ya, severity/probability/exposure tampil.
-- [ ] Input 5, 4, 5 menghasilkan score 100 dan category kritis.
-- [ ] Submit valid menyimpan hasil ke `vocasafe_checklist_results`.
-- [ ] Hasil checklist baru tampil di `/checklists`.
+- [ ] Template aktif dari Supabase terbaca.
+- [ ] 10 item checklist tampil.
+- [ ] Submit checklist dengan risiko berhasil:
+  - [ ] Salah satu item critical bernilai `tidak`.
+  - [ ] Severity 5.
+  - [ ] Probability 4.
+  - [ ] Exposure 5.
+  - [ ] Score 100.
+  - [ ] Category kritis.
+  - [ ] 10 jawaban masuk `checklist_result_items`.
+- [ ] Submit checklist tanpa risiko berhasil:
+  - [ ] Semua item aman atau N/A sesuai skenario.
+  - [ ] Risk fields tersimpan `null`.
+  - [ ] Hasil tampil di `/checklists`.
+- [ ] Tidak ada console error fatal.
 
-## 7. Audit
+## 10. Audit
 
-- [ ] `/audit` membaca dummy reports + localStorage reports.
-- [ ] Ringkasan risiko memakai category baru.
-- [ ] Status laporan memakai status baru.
-- [ ] Export CSV berjalan.
-- [ ] Nama file CSV adalah `vocasafe-audit-report.csv`.
-- [ ] Print / Save as PDF memanggil browser print dialog.
-- [ ] Saat print, topbar/sidebar/tombol aksi tersembunyi.
+- [ ] `/audit` tampil untuk role yang berhak.
+- [ ] Summary asset/laporan/checklist berasal dari Supabase.
+- [ ] Distribusi risiko tampil.
+- [ ] Status laporan tampil.
+- [ ] Hasil checklist tampil.
+- [ ] Temuan kritis tampil.
+- [ ] Export CSV berhasil.
+- [ ] CSV berisi data laporan Supabase.
+- [ ] CSV berisi data checklist Supabase.
+- [ ] Print / Save as PDF memanggil browser print preview.
+- [ ] Layout print bersih dan tombol aksi tersembunyi saat print jika CSS print aktif.
+- [ ] Tidak ada console error fatal.
 
-## 8. Export CSV
+## 11. Admin
 
-- [ ] CSV berisi nomor laporan.
-- [ ] CSV berisi judul laporan.
-- [ ] CSV berisi lokasi.
-- [ ] CSV berisi status.
-- [ ] CSV berisi skor risiko.
-- [ ] CSV berisi kategori risiko.
+- [ ] `/admin` hanya bisa diakses admin.
+- [ ] `user_profiles` tampil.
+- [ ] UUID tidak ditampilkan di UI utama.
+- [ ] `laboratories` tampil.
+- [ ] `assets` tampil.
+- [ ] `checklist_templates` tampil.
+- [ ] `checklist_items` tampil.
+- [ ] Admin bisa update role user lain lalu restore.
+- [ ] Admin bisa update `is_active` user lain lalu restore.
+- [ ] Admin tidak bisa mengubah role/status akun sendiri.
+- [ ] Tidak ada console error fatal.
 
-## 9. Print
+## 12. AI Recommendation Fallback
 
-- [ ] Tombol Print / PDF memanggil `window.print()`.
-- [ ] Layout print bersih.
-- [ ] Navigasi dan tombol aksi tidak ikut tercetak.
+- [ ] `AI_PROVIDER=none` atau API key kosong tetap menghasilkan fallback.
+- [ ] Provider failure tidak membuat UI crash.
+- [ ] AI recommendation tidak mengganti risk score.
+- [ ] API menolak input jika risk score tidak konsisten dengan severity x probability x exposure.
+- [ ] Secret AI key tidak dipakai di Client Component.
 
-## 10. Mobile 390px
+## 13. Security/Regression Grep
+
+- [ ] `.env.local` tidak tracked.
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` tidak dipakai di Client Component.
+- [ ] `createSupabaseAdminClient` tidak dipakai di browser/client pages.
+- [ ] `OPENAI_API_KEY`, `GEMINI_API_KEY`, dan `DEEPSEEK_API_KEY` tidak dipakai di Client Component.
+- [ ] `localStorage` tidak menjadi sumber utama route D4 aktif:
+  - [ ] `src/app/reports`
+  - [ ] `src/app/checklists`
+  - [ ] `src/app/dashboard`
+  - [ ] `src/app/audit`
+- [ ] `dummyAssets`, `dummyReports`, dan `dummyChecklists` tidak menjadi sumber utama route D4 aktif.
+- [ ] Tidak ada migration baru setelah D4-13 tanpa review.
+- [ ] Tidak ada dependency berubah setelah D4-14/D4-15 tanpa izin.
+
+## 14. Mobile 390px
 
 - [ ] Tidak ada horizontal overflow.
 - [ ] Menu mobile bisa dibuka dan ditutup.
 - [ ] Form laporan nyaman digunakan.
 - [ ] Form checklist nyaman digunakan.
-- [ ] Tabel audit tetap dapat dibaca/scroll horizontal bila perlu.
+- [ ] Scan page nyaman digunakan.
 - [ ] Tombol utama tidak tertutup navigasi.
+- [ ] Card digunakan di mobile saat tabel desktop tidak cocok.
 
-## 11. Build
+## 15. Release Gate
 
+- [ ] Full manual browser QA lulus.
 - [ ] `npm run typecheck` lulus.
 - [ ] `npm run build` lulus.
-- [ ] Tidak ada runtime error di browser console.
-- [ ] Tidak ada hydration error.
-
-## 12. Safety
-
-- [ ] Tidak ada Supabase.
-- [ ] Tidak ada API AI.
-- [ ] Tidak ada upload server/storage.
-- [ ] Tidak ada kamera QR sungguhan.
-- [ ] Tidak ada browser camera API.
-- [ ] Tidak ada library PDF eksternal.
-- [ ] Tidak ada secret/API key di repository.
+- [ ] Lint known issue AppShell dicatat sebagai non-blocking jika belum diperbaiki.
+- [ ] PR body sesuai scope D4.
+- [ ] Tidak ada secret di repo.
+- [ ] Belum merge sebelum approval.
+- [ ] Belum production deploy sebelum deploy approval.

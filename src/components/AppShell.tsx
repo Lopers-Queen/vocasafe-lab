@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   Shield,
   LayoutDashboard,
@@ -15,10 +15,17 @@ import {
   Menu,
   X,
   ShieldAlert,
+  Loader2,
 } from "lucide-react";
-import { getCurrentUser, logout, getRoleLabel } from "@/lib/auth";
+import {
+  clearCachedCurrentUser,
+  getCurrentUserProfile,
+  signOut,
+  getRoleLabel,
+} from "@/lib/auth";
 import { canAccessRoute } from "@/lib/role-access";
-import type { User } from "@/types";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { AppUser } from "@/types";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -32,37 +39,122 @@ const navItems = [
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState("");
+  const [logoutError, setLogoutError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
-  useEffect(() => {
-    const u = getCurrentUser();
-    if (!u) {
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    const { user: profile, error } = await getCurrentUserProfile();
+
+    if (!profile || error) {
+      setUser(null);
+      setAuthError(error ?? "Sesi Supabase tidak tersedia. Silakan login kembali.");
+      setLoading(false);
       router.replace("/login");
       return;
     }
-    setUser(u);
 
-    // Route guard: check if user can access current pathname
-    if (!canAccessRoute(u.role, pathname)) {
+    setAuthError("");
+    setUser(profile);
+
+    if (!canAccessRoute(profile.role, pathname)) {
       setAccessDenied(true);
     } else {
       setAccessDenied(false);
     }
-  }, [router, pathname]);
 
-  function handleLogout() {
-    logout();
+    setLoading(false);
+  }, [pathname, router]);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
+
+  useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === "INITIAL_SESSION") return;
+
+        if (event === "SIGNED_OUT" || !session) {
+          clearCachedCurrentUser();
+          setUser(null);
+          setAccessDenied(false);
+          setLoading(false);
+          router.replace("/login");
+          return;
+        }
+
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          void loadProfile();
+        }, 0);
+      });
+
+      return () => {
+        if (refreshTimer) clearTimeout(refreshTimer);
+        subscription.unsubscribe();
+      };
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Supabase belum dikonfigurasi. Periksa environment aplikasi.",
+      );
+    }
+  }, [loadProfile, router]);
+
+  async function handleLogout() {
+    setLogoutError("");
+    const { error } = await signOut();
+
+    if (error) {
+      setLogoutError(`Logout gagal: ${error}`);
+      return;
+    }
+
     router.replace("/login");
   }
 
-  if (!user) return null;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return authError ? (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <div className="max-w-lg rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+          <p className="font-semibold">Autentikasi belum siap.</p>
+          <p className="mt-1">{authError}</p>
+        </div>
+      </div>
+    ) : null;
+  }
 
   // Filter nav items based on user role
   const visibleNavItems = navItems.filter(({ href }) =>
     canAccessRoute(user.role, href)
   );
+  const logoutErrorAlert = logoutError ? (
+    <div
+      role="alert"
+      className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700"
+    >
+      {logoutError}
+    </div>
+  ) : null;
 
   // Show access denied page
   if (accessDenied) {
@@ -75,7 +167,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm text-slate-600">
-              {user.name} ({getRoleLabel(user.role)})
+              {user.fullName} ({getRoleLabel(user.role)})
             </span>
             <button
               onClick={handleLogout}
@@ -86,6 +178,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
+        {logoutErrorAlert}
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="text-center space-y-4">
             <ShieldAlert className="mx-auto h-12 w-12 text-red-400" />
@@ -121,7 +214,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-slate-600">
-            {user.name} ({getRoleLabel(user.role)})
+            {user.fullName} ({getRoleLabel(user.role)})
           </span>
           <button
             onClick={handleLogout}
@@ -132,6 +225,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </header>
+      {logoutErrorAlert}
 
       <div className="flex flex-1">
         {/* Sidebar desktop */}

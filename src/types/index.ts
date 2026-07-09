@@ -25,6 +25,15 @@ export interface User {
   role: UserRole;
 }
 
+export interface AppUser {
+  id: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  laboratoryId?: string | null;
+  isActive: boolean;
+}
+
 export interface StandardOperatingProcedure {
   id: string;
   title: string;
