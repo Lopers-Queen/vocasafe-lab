@@ -1,16 +1,16 @@
 # Supabase Setup VocaSafe Lab D4
 
-Dokumen ini menjelaskan setup Supabase development untuk migrasi D4. Sampai
-D4-4, autentikasi sudah memakai Supabase Auth dan role aplikasi dibaca dari
-`public.user_profiles`. Data operasional aplikasi belum dimigrasikan dari dummy
-data/localStorage.
+Dokumen ini menjelaskan setup Supabase untuk D4 production-like migration. Pada kondisi D4 saat ini, aplikasi sudah memakai Supabase Auth, `public.user_profiles`, Supabase Database, Supabase Storage, dan RLS hardening D4-13 untuk route aktif.
+
+Route aktif D4 memakai Supabase sebagai sumber utama untuk auth, asset/SOP, reports/follow-up/evidence metadata, checklist, dashboard, audit, dan admin page. File dummy/localStorage lama masih ada sebagai artefak legacy/non-runtime, tetapi bukan sumber utama route D4 aktif.
 
 ## 1. Buat Project Supabase
 
 1. Buka Supabase Dashboard.
 2. Buat project baru untuk VocaSafe Lab.
 3. Simpan project URL dan anon key.
-4. Simpan service role key hanya untuk server-side operations.
+4. Simpan service role key hanya jika ada kebutuhan server-only admin operation.
+5. Jangan menyalin secret ke dokumentasi, issue, PR, atau output agent.
 
 ## 2. Environment Variables
 
@@ -19,23 +19,23 @@ Salin `.env.example` menjadi `.env.local` untuk development lokal, lalu isi nila
 ```env
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=report-evidence
 AI_PROVIDER=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
-SUPABASE_STORAGE_BUCKET=report-evidence
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 Catatan keamanan:
 
 - `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_ANON_KEY` boleh dipakai browser.
-- `SUPABASE_SERVICE_ROLE_KEY` wajib server-only.
-- AI API keys wajib server-only.
+- `SUPABASE_STORAGE_BUCKET` berisi nama bucket, bukan secret.
+- `SUPABASE_SERVICE_ROLE_KEY` wajib server-only dan tidak boleh dipakai di Client Component.
+- AI API keys wajib server-only dan tidak boleh memakai prefix `NEXT_PUBLIC_`.
 - Jangan commit `.env.local` atau file `.env` berisi secret.
-- Service role key hanya boleh digunakan di Route Handler, Server Action, atau module server-only.
 
-## 3. Jalankan Migration Awal
+## 3. Jalankan Migration 001
 
 Migration awal berada di:
 
@@ -43,29 +43,26 @@ Migration awal berada di:
 supabase/migrations/001_initial_d4_schema.sql
 ```
 
-Untuk menjalankan migration secara manual pada project development:
+Untuk menjalankan migration secara manual:
 
-1. Buka Supabase Dashboard dan pilih project VocaSafe Lab.
+1. Buka Supabase Dashboard dan pilih project target.
 2. Buka **SQL Editor** lalu buat query baru.
-3. Salin seluruh isi `001_initial_d4_schema.sql` ke editor.
-4. Pastikan project yang dipilih adalah environment development.
-5. Jalankan query sekali dan periksa bahwa tidak ada error.
-
-Migration juga dapat dijalankan melalui Supabase CLI jika project sudah di-link,
-tetapi jangan menjalankan ulang file manual tanpa memastikan status migration.
+3. Salin seluruh isi `001_initial_d4_schema.sql`.
+4. Pastikan environment yang dipilih benar.
+5. Jalankan query sekali dan periksa tidak ada error.
 
 Migration ini membuat:
 
 - enum role/status/risiko/asset/checklist
-- tabel laboratories, user_profiles, sops, assets, k3_facilities, risk_points
-- tabel reports, report_followups, report_attachments
-- tabel checklist_templates, checklist_items, checklist_results, checklist_result_items
-- tabel audit_logs
+- tabel `laboratories`, `user_profiles`, `sops`, `assets`, `k3_facilities`, `risk_points`
+- tabel `reports`, `report_followups`, `report_attachments`
+- tabel `checklist_templates`, `checklist_items`, `checklist_results`, `checklist_result_items`
+- tabel `audit_logs`
 - index penting
 - RLS awal
 - helper function RLS awal
 
-Catatan: migration ini dimaksudkan untuk dijalankan sekali oleh tracking migration Supabase. File ini tidak dirancang sebagai script idempotent penuh untuk eksekusi manual berulang-ulang.
+Catatan: migration ini dimaksudkan untuk dijalankan sekali oleh tracking migration Supabase. File ini tidak dirancang sebagai script idempotent penuh untuk eksekusi manual berulang.
 
 ## 4. Jalankan Seed Awal
 
@@ -88,14 +85,12 @@ Seed tidak membuat `auth.users` dan tidak membuat final `user_profiles`.
 
 Untuk menjalankan seed secara manual:
 
-1. Pastikan migration awal berhasil dijalankan.
-2. Buka **SQL Editor** pada project development yang sama.
-3. Salin seluruh isi `001_seed_initial_data.sql` ke query baru.
-4. Jalankan query dan lanjutkan dengan query verifikasi di bawah.
+1. Pastikan migration 001 berhasil dijalankan.
+2. Buka **SQL Editor** pada project yang sama.
+3. Salin seluruh isi `001_seed_initial_data.sql`.
+4. Jalankan query dan lanjutkan dengan query verifikasi.
 
 ### 4.1 Verifikasi Jumlah Seed
-
-Jalankan query read-only berikut melalui SQL Editor:
 
 ```sql
 select count(*) from public.laboratories;
@@ -135,12 +130,9 @@ order by a.code;
 
 Data yang diharapkan:
 
-- `AST-001` — Mesin Bor Duduk 01 — SOP Penggunaan Mesin Bor
-- `AST-002` — APAR Ruang Praktikum — SOP Pemeriksaan APAR
-- `AST-003` — Kotak P3K — SOP Pemeriksaan P3K
-
-Status asset harus menggunakan enum `layak`, `perlu_dicek`, atau
-`tidak_layak`.
+- `AST-001` - Mesin Bor Duduk 01 - SOP Penggunaan Mesin Bor
+- `AST-002` - APAR Ruang Praktikum - SOP Pemeriksaan APAR
+- `AST-003` - Kotak P3K - SOP Pemeriksaan P3K
 
 ### 4.3 Verifikasi Template dan Item Checklist
 
@@ -153,8 +145,7 @@ from public.checklist_items
 order by sort_order;
 ```
 
-Template `Checklist K3 Laboratorium Vokasi` harus aktif dan memiliki 10 item
-dengan urutan berikut:
+Template `Checklist K3 Laboratorium Vokasi` harus aktif dan memiliki 10 item:
 
 1. Kondisi fisik alat/fasilitas
 2. Kabel dan konektor
@@ -190,23 +181,9 @@ values (
 );
 ```
 
-Ganti email dan UUID sesuai user Auth yang dibuat. Jangan gunakan contoh ini untuk production tanpa menyesuaikan data sebenarnya.
+Ganti email dan UUID sesuai user Auth yang dibuat. Jangan gunakan contoh ini tanpa menyesuaikan data environment.
 
-Admin pertama sengaja dibuat manual agar ada akun awal yang dapat login sebelum
-halaman administrasi user tersedia. User berikutnya nantinya dibuat melalui
-halaman admin aplikasi pada task khusus admin user.
-
-Validasi profile admin dengan query read-only berikut:
-
-```sql
-select id, full_name, email, role, is_active
-from public.user_profiles
-where role = 'admin';
-```
-
-Pastikan minimal satu row tersedia, `role = 'admin'`, `is_active = true`, dan
-nilai `id` sama dengan UUID user pada **Authentication > Users**. Untuk validasi
-langsung dari SQL Editor, gunakan:
+Validasi profile admin:
 
 ```sql
 select
@@ -221,34 +198,77 @@ left join auth.users u on u.id = p.id
 where p.role = 'admin';
 ```
 
-Jangan menyalin UUID, email, password, access token, atau key asli ke dokumentasi,
-issue tracker, maupun output agent. Sensor identifier saat membuat laporan.
+Pastikan minimal satu row tersedia, `role = 'admin'`, `is_active = true`, dan nilai `id` sama dengan UUID user pada Authentication > Users.
 
-## 6. RLS Draft Awal
+## 6. Buat Bucket Storage Private
 
-RLS di D4-1 masih draft awal agar tidak ada tabel public tanpa RLS.
+Bucket evidence wajib tersedia sebelum test reports dengan upload foto.
 
-Catatan penting:
-
-- RLS sudah di-enable pada seluruh tabel utama yang dibuat oleh migration D4-1.
-- Policy awal memakai role authenticated dan helper role dari `user_profiles`.
-- Policy `authenticated select` untuk reports, followups, dan attachments masih perlu hardening berbasis lab scope pada D4-13.
-- Helper `SECURITY DEFINER` perlu review owner, privilege, dan grant pada D4-13.
-- Jangan anggap RLS D4-1 sebagai final production policy.
-
-## 7. Storage
-
-Target bucket untuk evidence photos:
+Target bucket:
 
 ```text
 report-evidence
 ```
 
-Bucket belum dibuat pada D4-2. Storage bucket dan policy akan dibuat pada task Storage berikutnya.
+Requirement:
 
-## 8. Free Tier Note
+- Bucket private, bukan public.
+- Batas file disarankan 5 MB.
+- MIME type disarankan: `image/jpeg`, `image/png`, `image/webp`.
+- Akses baca di aplikasi memakai signed URL.
+- Policy final mengacu pada migration 002 D4-13, bukan policy MVP D4-8.
 
-Supabase Free tier cukup untuk tahap awal demo dan development, tetapi perhatikan limit:
+Detail setup ada di `docs/supabase-storage.md`.
+
+## 7. Jalankan Migration 002 RLS Hardening
+
+Migration hardening berada di:
+
+```text
+supabase/migrations/002_d4_rls_hardening.sql
+```
+
+Jalankan setelah:
+
+1. Migration 001 berhasil.
+2. Seed berhasil.
+3. Admin pertama tersedia.
+4. Bucket `report-evidence` sudah dibuat private.
+
+Migration 002 memperketat:
+
+- helper function role dan active user
+- policy `user_profiles`
+- policy reports, follow-up, attachment metadata
+- policy checklist results dan result items
+- policy Storage `report-evidence`
+- grant/revoke helper function
+- validasi database untuk risk scoring reports/checklists
+
+Migration 002 juga harus men-drop policy manual lama yang terlalu luas:
+
+- `report_evidence_authenticated_upload`
+- `report_evidence_authenticated_read`
+
+Detail review ada di `docs/rls-hardening.md`.
+
+## 8. Runtime Verification
+
+Setelah setup selesai, jalankan QA manual minimal:
+
+1. Login admin.
+2. Buka `/dashboard`, `/assets`, `/reports`, `/checklists`, `/audit`, dan `/admin`.
+3. Buat laporan dari `/reports/new?assetId=AST-001`.
+4. Upload evidence JPG/PNG/WebP dan pastikan signed URL tampil di detail laporan.
+5. Update status/follow-up sebagai role manager.
+6. Buat checklist dengan risiko dan tanpa risiko.
+7. Pastikan dashboard dan audit membaca data Supabase terbaru.
+8. Export CSV dan print audit.
+9. Test role mahasiswa/dosen/teknisi/kepala_lab/admin sesuai matrix akses.
+
+## 9. Free Tier Note
+
+Supabase Free tier cukup untuk tahap demo dan development, tetapi perhatikan limit:
 
 - database size
 - bandwidth
@@ -258,13 +278,22 @@ Supabase Free tier cukup untuk tahap awal demo dan development, tetapi perhatika
 
 Untuk production sesungguhnya, evaluasi plan sesuai kebutuhan penggunaan.
 
-## 9. Status Sampai D4-4
+## 10. Status D4
 
-- D4-1: schema, RLS draft, dan seed plan selesai.
-- D4-2: helper Supabase browser/server/admin selesai.
-- D4-3: Supabase Auth, `user_profiles`, dan route guard selesai.
-- D4-4: prosedur verifikasi seed dan admin pertama didokumentasikan.
-- D4-5 berikutnya: migrasi halaman Assets dan SOP agar membaca Supabase.
+- D4-1: schema, RLS draft, dan seed plan.
+- D4-2: helper Supabase browser/server/admin.
+- D4-3: Supabase Auth, `user_profiles`, dan route guard.
+- D4-4: seed verification dan admin pertama.
+- D4-5: Assets dan SOP dari Supabase.
+- D4-6: Scan lookup dari Supabase.
+- D4-7: QR camera scanner.
+- D4-8: Reports dan evidence Storage.
+- D4-9: Status laporan dan follow-up Supabase.
+- D4-10: Checklist K3 Supabase.
+- D4-11: Dashboard dan audit Supabase.
+- D4-12: Admin management page.
+- D4-13: RLS hardening.
+- D4-14: AI recommendation fallback.
+- D4-15: Deploy preparation checklist.
 
-`.env.local` hanya untuk development lokal dan tidak boleh di-commit. Pastikan
-file tersebut tetap diabaikan Git sebelum menambahkan credential apa pun.
+`.env.local` hanya untuk development lokal dan tidak boleh di-commit.
