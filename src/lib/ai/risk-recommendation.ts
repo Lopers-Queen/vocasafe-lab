@@ -7,7 +7,8 @@ export type AIRecommendationProvider =
   | "fallback"
   | "openai"
   | "gemini"
-  | "deepseek";
+  | "deepseek"
+  | "openrouter";
 
 export type AIRecommendationSource = "report" | "checklist";
 

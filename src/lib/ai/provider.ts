@@ -15,7 +15,12 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 function configuredProvider(): ConfiguredProvider | null {
   const provider = process.env.AI_PROVIDER?.trim().toLowerCase();
-  if (provider === "openai" || provider === "gemini" || provider === "deepseek") {
+  if (
+    provider === "openai" ||
+    provider === "gemini" ||
+    provider === "deepseek" ||
+    provider === "openrouter"
+  ) {
     return provider;
   }
 
@@ -138,6 +143,45 @@ async function generateDeepSeek(prompt: string): Promise<string> {
   return text;
 }
 
+async function generateOpenRouter(prompt: string): Promise<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+
+  const response = await fetchWithTimeout(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://vocasafe-lab.vercel.app",
+        "X-Title": "VocaSafe Lab",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENROUTER_MODEL ?? "tencent/hy3:free",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter request failed: ${response.status}`);
+  }
+
+  const text = extractOpenAiText(await readJson(response));
+  if (!text) throw new Error("OpenRouter response did not include text.");
+  return text;
+}
+
 async function generateGemini(prompt: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
@@ -169,6 +213,7 @@ async function generateWithProvider(
 ): Promise<string> {
   if (provider === "openai") return generateOpenAi(prompt);
   if (provider === "gemini") return generateGemini(prompt);
+  if (provider === "openrouter") return generateOpenRouter(prompt);
   return generateDeepSeek(prompt);
 }
 
