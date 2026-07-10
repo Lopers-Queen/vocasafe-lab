@@ -24,7 +24,7 @@ OPENAI_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
 OPENROUTER_API_KEY=
-OPENROUTER_MODEL=tencent/hy3:free
+OPENROUTER_MODEL=openrouter/free
 ```
 
 Nilai `AI_PROVIDER` yang didukung:
@@ -44,10 +44,10 @@ Untuk OpenRouter, gunakan:
 ```text
 AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=<server-only key>
-OPENROUTER_MODEL=tencent/hy3:free
+OPENROUTER_MODEL=openrouter/free
 ```
 
-Model default OpenRouter adalah `tencent/hy3:free` jika `OPENROUTER_MODEL` tidak diisi. Integrasi ini memakai Chat Completions API OpenRouter tanpa fitur reasoning vendor, tanpa streaming, dan tanpa menyimpan reasoning.
+Model default OpenRouter adalah `openrouter/free` jika `OPENROUTER_MODEL` tidak diisi. Model ini memakai Free Models Router dari OpenRouter untuk memilih model free yang kompatibel. Integrasi ini memakai Chat Completions API OpenRouter tanpa fitur reasoning vendor, tanpa streaming, dan tanpa menyimpan reasoning.
 
 ## Provider Fallback
 

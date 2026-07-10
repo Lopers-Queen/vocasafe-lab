@@ -12,6 +12,7 @@ import {
 type ConfiguredProvider = Exclude<AIRecommendationProvider, "fallback">;
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 function configuredProvider(): ConfiguredProvider | null {
   const provider = process.env.AI_PROVIDER?.trim().toLowerCase();
@@ -65,6 +66,155 @@ function extractOpenAiText(payload: unknown): string | null {
   const firstChoice = asRecord(choices[0]);
   const message = asRecord(firstChoice?.message);
   return typeof message?.content === "string" ? message.content : null;
+}
+
+function normalizeText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function extractTextFromContentParts(value: unknown): string | null {
+  const directText = normalizeText(value);
+  if (directText) return directText;
+
+  const contentRecord = asRecord(value);
+  if (contentRecord) {
+    return (
+      normalizeText(contentRecord.text) ??
+      normalizeText(contentRecord.content)
+    );
+  }
+
+  if (!Array.isArray(value)) return null;
+
+  const parts = value
+    .map((part) => {
+      const textPart = normalizeText(part);
+      if (textPart) return textPart;
+
+      const partRecord = asRecord(part);
+      return (
+        normalizeText(partRecord?.text) ??
+        normalizeText(partRecord?.content)
+      );
+    })
+    .filter((part): part is string => Boolean(part));
+
+  return parts.length > 0 ? parts.join("\n").trim() : null;
+}
+
+function extractOpenRouterErrorMessage(payload: unknown): string | null {
+  const error = asRecord(asRecord(payload)?.error);
+  const message = normalizeText(error?.message);
+  if (!message) return null;
+
+  return message.slice(0, 180);
+}
+
+function describeOpenRouterPayload(payload: unknown) {
+  const record = asRecord(payload);
+  const choices = record?.choices;
+  const firstChoice = Array.isArray(choices) ? asRecord(choices[0]) : null;
+  const message = asRecord(firstChoice?.message);
+  const content = message?.content;
+  const contentRecord = asRecord(content);
+  const firstPart = Array.isArray(content) ? asRecord(content[0]) : null;
+  const publicKeys = (value: Record<string, unknown> | null) =>
+    value
+      ? Object.keys(value)
+          .filter((key) => !key.toLowerCase().startsWith("reasoning"))
+          .sort()
+      : [];
+
+  return {
+    hasChoices: Array.isArray(choices),
+    choicesCount: Array.isArray(choices) ? choices.length : 0,
+    firstChoiceKeys: publicKeys(firstChoice),
+    messageKeys: publicKeys(message),
+    contentType: Array.isArray(content) ? "array" : typeof content,
+    contentObjectKeys: contentRecord ? publicKeys(contentRecord) : [],
+    contentPartCount: Array.isArray(content) ? content.length : 0,
+    firstPartKeys: publicKeys(firstPart),
+    choiceTextType: typeof firstChoice?.text,
+    hasErrorMessage: Boolean(extractOpenRouterErrorMessage(payload)),
+    hasReasoningMetadata: Boolean(
+      message &&
+        Object.keys(message).some((key) =>
+          key.toLowerCase().startsWith("reasoning"),
+        ),
+    ),
+  };
+}
+
+function extractOpenRouterText(payload: unknown): string | null {
+  const record = asRecord(payload);
+  const choices = record?.choices;
+  if (!Array.isArray(choices)) return null;
+
+  const firstChoice = asRecord(choices[0]);
+  const message = asRecord(firstChoice?.message);
+
+  return (
+    extractTextFromContentParts(message?.content) ??
+    normalizeText(firstChoice?.text)
+  );
+}
+
+async function requestOpenRouterText(
+  prompt: string,
+  model: string,
+): Promise<string | null> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+
+  const response = await fetchWithTimeout(
+    "https://openrouter.ai/api/v1/chat/completions",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://vocasafe-lab.vercel.app",
+        "X-Title": "VocaSafe Lab",
+        "X-OpenRouter-Title": "VocaSafe Lab",
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 300,
+      }),
+    },
+  );
+
+  const payload = await readJson(response);
+
+  if (!response.ok) {
+    const errorMessage = extractOpenRouterErrorMessage(payload);
+    throw new Error(
+      errorMessage
+        ? `OpenRouter request failed: ${response.status} ${errorMessage}`
+        : `OpenRouter request failed: ${response.status}`,
+    );
+  }
+
+  const text = extractOpenRouterText(payload);
+  if (!text) {
+    console.error("[AI Risk Recommendation] OpenRouter response missing text", {
+      provider: "openrouter",
+      model,
+      status: response.status,
+      shape: describeOpenRouterPayload(payload),
+    });
+  }
+
+  return text;
 }
 
 function extractGeminiText(payload: unknown): string | null {
@@ -144,41 +294,15 @@ async function generateDeepSeek(prompt: string): Promise<string> {
 }
 
 async function generateOpenRouter(prompt: string): Promise<string> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured.");
+  const model = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
+  const text =
+    (await requestOpenRouterText(prompt, model)) ??
+    (model === DEFAULT_OPENROUTER_MODEL
+      ? null
+      : await requestOpenRouterText(prompt, DEFAULT_OPENROUTER_MODEL));
 
-  const response = await fetchWithTimeout(
-    "https://openrouter.ai/api/v1/chat/completions",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://vocasafe-lab.vercel.app",
-        "X-Title": "VocaSafe Lab",
-      },
-      body: JSON.stringify({
-        model: process.env.OPENROUTER_MODEL ?? "tencent/hy3:free",
-        messages: [
-          {
-            role: "system",
-            content:
-              "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
-          },
-          { role: "user", content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 300,
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`OpenRouter request failed: ${response.status}`);
-  }
-
-  const text = extractOpenAiText(await readJson(response));
   if (!text) throw new Error("OpenRouter response did not include text.");
+
   return text;
 }
 
