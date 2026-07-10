@@ -23,6 +23,8 @@ AI_PROVIDER=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=openrouter/free
 ```
 
 Nilai `AI_PROVIDER` yang didukung:
@@ -32,9 +34,20 @@ none
 openai
 gemini
 deepseek
+openrouter
 ```
 
 API key bersifat server-only. Jangan membaca key AI di Client Component dan jangan menaruh secret ke variabel `NEXT_PUBLIC_*`.
+
+Untuk OpenRouter, gunakan:
+
+```text
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=<server-only key>
+OPENROUTER_MODEL=openrouter/free
+```
+
+Model default OpenRouter adalah `openrouter/free` jika `OPENROUTER_MODEL` tidak diisi. Model ini memakai Free Models Router dari OpenRouter untuk memilih model free yang kompatibel. Integrasi ini memakai Chat Completions API OpenRouter tanpa fitur reasoning vendor, tanpa streaming, dan tanpa menyimpan reasoning.
 
 ## Provider Fallback
 
@@ -65,7 +78,7 @@ Fallback dapat menambahkan konteks singkat dari judul, aset, dan lokasi, tetapi 
 
 ## Cara Test Dengan Provider
 
-1. Set `AI_PROVIDER` ke `openai`, `gemini`, atau `deepseek`.
+1. Set `AI_PROVIDER` ke `openai`, `gemini`, `deepseek`, atau `openrouter`.
 2. Isi API key provider yang sesuai di environment server.
 3. Jalankan ulang aplikasi agar environment terbaca.
 4. Buka form laporan baru dan klik `Buat Rekomendasi AI`.

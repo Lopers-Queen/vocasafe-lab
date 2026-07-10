@@ -16,13 +16,18 @@ AI_PROVIDER=none
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
+OPENROUTER_API_KEY=
+OPENROUTER_MODEL=tencent/hy3:free
 ```
 
 Catatan AI:
 
 - Gunakan `AI_PROVIDER=none` untuk deploy tanpa provider AI berbayar.
+- Provider opsional yang didukung: `openai`, `gemini`, `deepseek`, dan `openrouter`.
+- Untuk OpenRouter, gunakan `AI_PROVIDER=openrouter`; model default adalah `tencent/hy3:free`.
 - Isi hanya API key provider yang dipakai.
 - Jangan menaruh API key pada variabel `NEXT_PUBLIC_*`.
+- Fitur rekomendasi tidak memakai fitur reasoning vendor; output hanya teks rekomendasi K3.
 
 Catatan service role:
 
@@ -59,6 +64,7 @@ Jalankan setelah Vercel deploy:
 11. Test export CSV dan print audit.
 12. Buka `/admin`; cek user_profiles, data dasar, update user lain, dan self-lock.
 13. Test tombol `Buat Rekomendasi AI` tanpa API key; fallback harus muncul.
+14. Jika memakai OpenRouter, test dengan `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, dan model default `tencent/hy3:free`.
 
 ## Known Warning
 
