@@ -42,6 +42,7 @@ Pastikan sebelum deploy:
 - Migration `001_initial_d4_schema.sql` sudah dijalankan.
 - Seed `001_seed_initial_data.sql` sudah dijalankan.
 - Migration `002_d4_rls_hardening.sql` sudah dijalankan.
+- Migration `004_ai_endpoint_rate_limit.sql` sudah direview dan dijalankan manual.
 - Bucket private `report-evidence` sudah ada.
 - Storage policy untuk upload/read signed URL foto bukti aktif.
 - Admin user manual sudah ada di Supabase Auth dan `user_profiles`.
@@ -65,6 +66,12 @@ Jalankan setelah Vercel deploy:
 12. Buka `/admin`; cek user_profiles, data dasar, update user lain, dan self-lock.
 13. Test tombol `Buat Rekomendasi AI` tanpa API key; fallback harus muncul.
 14. Jika memakai OpenRouter, test dengan `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, dan model default `tencent/hy3:free`.
+15. Panggil endpoint AI tanpa login dan pastikan response `401`.
+16. Pastikan profil inactive mendapat `403` dari endpoint AI.
+17. Sebagai user aktif, kirim 11 request AI dalam 60 detik dan pastikan request ke-11 mendapat `429` dengan header `Retry-After`.
+18. Pastikan rate limit user lain terpisah dan kembali tersedia setelah window 60 detik.
+
+Rate limiter AI memakai tabel Supabase dan RPC atomik dengan batas 10 request per 60 detik per user. Fitur ini tidak memerlukan environment variable, service role, atau dependency tambahan. Provider yang gagal tetap menggunakan fallback rule-based setelah request lolos autentikasi dan rate limit.
 
 ## Known Warning
 
