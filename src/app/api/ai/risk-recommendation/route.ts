@@ -2,10 +2,27 @@ import { NextResponse } from "next/server";
 
 import { generateRiskRecommendation } from "@/lib/ai/provider";
 import { consumeAiRateLimit } from "@/lib/ai/rate-limit";
-import { validateRiskRecommendationInput } from "@/lib/ai/risk-recommendation";
+import {
+  validateRiskSuggestionInput,
+  type AIRecommendationSource,
+} from "@/lib/ai/risk-recommendation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { UserRole } from "@/types";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
+const REPORT_AI_ROLES = new Set<UserRole>([
+  "mahasiswa",
+  "dosen",
+  "teknisi",
+  "admin",
+]);
+const CHECKLIST_AI_ROLES = new Set<UserRole>(["dosen", "teknisi", "admin"]);
+
+function canUseAiSuggestion(role: UserRole, source: AIRecommendationSource) {
+  return source === "report"
+    ? REPORT_AI_ROLES.has(role)
+    : CHECKLIST_AI_ROLES.has(role);
+}
 
 function errorResponse(
   error: string,
@@ -29,7 +46,7 @@ export async function POST(request: Request) {
 
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
-      .select("id,is_active")
+      .select("id,is_active,role")
       .eq("id", authData.user.id)
       .maybeSingle();
 
@@ -40,7 +57,11 @@ export async function POST(request: Request) {
       return errorResponse("Layanan rekomendasi sedang tidak tersedia.", 500);
     }
 
-    if (!profile || profile.is_active !== true) {
+    if (
+      !profile ||
+      profile.is_active !== true ||
+      !REPORT_AI_ROLES.has(profile.role as UserRole)
+    ) {
       return errorResponse("Profil tidak aktif atau tidak tersedia.", 403);
     }
 
@@ -68,9 +89,13 @@ export async function POST(request: Request) {
       return errorResponse("Request rekomendasi tidak valid.", 400);
     }
 
-    const validation = validateRiskRecommendationInput(body);
+    const validation = validateRiskSuggestionInput(body);
     if (validation.error || !validation.input) {
       return errorResponse("Request rekomendasi tidak valid.", 400);
+    }
+
+    if (!canUseAiSuggestion(profile.role as UserRole, validation.input.source)) {
+      return errorResponse("Profil tidak aktif atau tidak tersedia.", 403);
     }
 
     const result = await generateRiskRecommendation(validation.input);

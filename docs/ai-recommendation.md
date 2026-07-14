@@ -1,42 +1,120 @@
-# AI-Assisted Risk Recommendation
+# AI-Assisted Risk Suggestion Review
 
-## Tujuan Fitur
+## Tujuan dan Batas Keputusan
 
-Fitur ini membantu pengguna menyusun rekomendasi tindak lanjut K3 berdasarkan konteks laporan atau checklist. Rekomendasi dibuat dari input terstruktur seperti judul, deskripsi, aset, lokasi, dan hasil risk scoring.
+Fitur ini membaca konteks laporan dan memberikan saran kategori bahaya, severity, probability, exposure, rekomendasi tindakan awal, serta alasan singkat. Semua hasil merupakan saran yang wajib ditinjau pengguna.
 
-## AI Tidak Mengganti Risk Score
+Saran tidak pernah mengubah form, membuat report, atau menyimpan metadata secara otomatis. Pengguna harus memilih `Gunakan Saran AI`, mengubah nilai secara manual, atau mengabaikannya. Submit report selalu memakai nilai akhir yang terlihat pada form.
 
-Risk score utama tetap dihitung secara rule-based dengan rumus:
+Kategori bahaya masih bersifat advisory dan tidak disimpan karena tabel `reports` belum memiliki kolom `hazard_category`.
+
+## Risk Score Deterministic
+
+Risk score dan kategori selalu dihitung server-side dan client-side menggunakan aturan sistem:
 
 ```text
 Risk Score = Severity x Probability x Exposure
+
+1-20   = rendah
+21-50  = sedang
+51-80  = tinggi
+81-125 = kritis
 ```
 
-AI tidak boleh menentukan, mengganti, atau menyimpan risk score. API rekomendasi akan menolak request jika `riskScore` tidak sama dengan hasil perkalian `severity`, `probability`, dan `exposure`, atau jika `riskCategory` tidak sesuai threshold.
+Score atau kategori dari provider tidak dipercaya dan diabaikan. AI tidak dapat mengganti formula, threshold, atau nilai report yang sudah tersimpan.
 
 ## Keamanan Endpoint
 
-Endpoint `/api/ai/risk-recommendation` hanya dapat dipanggil oleh pengguna dengan session Supabase yang valid dan profil `user_profiles` aktif. API memverifikasi user melalui Supabase Auth di server, lalu memeriksa `is_active` sebelum memproses request.
+Endpoint `POST /api/ai/risk-recommendation` mempertahankan kontrol berikut:
 
-Setiap pengguna aktif dibatasi hingga 10 request per 60 detik. Counter disimpan di Supabase dan dikonsumsi melalui RPC atomik `consume_ai_rate_limit`, sehingga pembatasan tetap konsisten pada deployment Vercel/serverless. Request dengan body invalid tetap mengurangi kuota setelah autentikasi.
+- Supabase session diverifikasi di server dengan `auth.getUser()`.
+- Profil `user_profiles` harus tersedia dan `is_active = true`.
+- Role diperiksa di API, bukan hanya melalui route guard UI.
+- Rate limit menggunakan RPC Supabase atomik: 10 request per 60 detik per user.
+- Body invalid tetap dihitung setelah autentikasi dan rate limit.
+- Semua response memakai `Cache-Control: no-store`.
+- Response `429` menyertakan `Retry-After` dan `retryAfterSeconds`.
+- Rate limiter fail-closed jika RPC gagal.
+- API key provider tetap server-only; service role tidak digunakan.
+- Raw error, prompt internal, cookie, token, provider response, reasoning, dan `reasoning_details` tidak dikirim ke client.
 
-Rate limiter tidak memerlukan environment variable atau service role baru. Migration `004_ai_endpoint_rate_limit.sql` harus direview dan dijalankan manual sebelum endpoint aman ini diuji pada runtime.
-
-Response error yang digunakan:
+Role untuk suggestion laporan:
 
 ```text
-400: request rekomendasi tidak valid
-401: session login tidak tersedia
-403: profil tidak tersedia atau tidak aktif
-429: batas 10 request per 60 detik tercapai
-500: layanan rekomendasi tidak tersedia
+mahasiswa, dosen, teknisi, admin
 ```
 
-Semua response endpoint memakai `Cache-Control: no-store`. Response `429` juga menyertakan `Retry-After` dalam detik. Raw error Supabase/provider, token, cookie, API key, stack trace, dan reasoning metadata tidak dikirim ke client.
+Role untuk source checklist jika digunakan kemudian:
+
+```text
+dosen, teknisi, admin
+```
+
+`kepala_lab` tidak memiliki akses ke endpoint suggestion laporan. Response forbidden tetap generic agar detail authorization tidak dibocorkan.
+
+Migration `004_ai_endpoint_rate_limit.sql` harus telah direview dan diterapkan manual pada environment Supabase sebelum endpoint diuji atau dideploy. Tidak ada environment variable rate-limit tambahan.
+
+## Request Schema
+
+```json
+{
+  "source": "report",
+  "title": "Kabel mesin bor terkelupas",
+  "description": "Kabel terlihat rusak dan berpotensi menyebabkan sengatan listrik.",
+  "assetName": "Mesin Bor",
+  "location": "Lab Teknik Mesin",
+  "currentSeverity": 3,
+  "currentProbability": 3,
+  "currentExposure": 3
+}
+```
+
+Validasi input:
+
+- `source`: hanya `report` atau `checklist`.
+- `title`: trim, 3-160 karakter.
+- `description`: trim, 10-1200 karakter.
+- `assetName`: trim, maksimal 160 karakter atau `null`.
+- `location`: trim, maksimal 160 karakter atau `null`.
+- Setiap faktor current risk: integer 1-5.
+
+Request tidak mengirim nama user, email, role, foto, URL evidence, attachment metadata, access token, report ID, atau data database lain yang tidak diperlukan.
+
+## Response Schema
+
+```json
+{
+  "provider": "openrouter",
+  "hazardCategory": "listrik",
+  "suggestedSeverity": 5,
+  "suggestedProbability": 4,
+  "suggestedExposure": 5,
+  "suggestedRiskScore": 100,
+  "suggestedRiskCategory": "kritis",
+  "recommendation": "Hentikan penggunaan alat sampai dilakukan pemeriksaan.",
+  "shortRationale": "Kabel rusak berpotensi menimbulkan sengatan listrik."
+}
+```
+
+Provider yang mungkin: `fallback`, `openai`, `gemini`, `deepseek`, atau `openrouter`.
+
+Kategori bahaya hanya: `listrik`, `mekanik`, `kebakaran`, `bahan_kimia`, `ergonomi`, `fasilitas_k3`, `lingkungan`, atau `lainnya`.
+
+Output provider divalidasi:
+
+- Faktor suggestion harus integer 1-5.
+- Recommendation maksimal 900 karakter dan 5 kalimat.
+- Short rationale maksimal 280 karakter dan 2 kalimat.
+- Suggested score dan category dihitung ulang oleh server.
+- Output tidak valid beralih ke fallback rule-based.
+
+## Prompt Hardening dan Minimisasi Data
+
+System instruction dan data laporan dikirim terpisah. Title, description, asset name, dan location diserialisasi sebagai JSON di dalam delimiter data tidak dipercaya. System instruction menyatakan bahwa instruksi apa pun di dalam data laporan harus diperlakukan sebagai isi laporan, bukan instruksi provider.
+
+Provider diminta mengembalikan JSON terstruktur tanpa markdown, reasoning, `reasoning_details`, atau chain of thought. Server hanya mengambil field yang di-whitelist dan menghitung score/category sendiri.
 
 ## Environment Variables
-
-Variabel yang tersedia di `.env.example`:
 
 ```text
 AI_PROVIDER=
@@ -47,83 +125,50 @@ OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 ```
 
-Nilai `AI_PROVIDER` yang didukung:
+API key wajib server-only dan tidak boleh memakai prefix `NEXT_PUBLIC_`. Jika provider kosong, key tidak tersedia, timeout, response invalid, atau provider gagal, API mengembalikan fallback rule-based dengan HTTP `200` selama autentikasi dan quota valid.
+
+## Error Contract
 
 ```text
-none
-openai
-gemini
-deepseek
-openrouter
+400: request suggestion tidak valid
+401: session login tidak tersedia
+403: profil inactive/missing atau role tidak diizinkan
+429: batas 10 request per 60 detik tercapai
+500: layanan suggestion tidak tersedia
 ```
 
-API key bersifat server-only. Jangan membaca key AI di Client Component dan jangan menaruh secret ke variabel `NEXT_PUBLIC_*`.
+UI menampilkan pesan khusus untuk setiap status. Request yang dibatalkan karena konteks berubah tidak ditampilkan sebagai service error.
 
-Untuk OpenRouter, gunakan:
+## UI Review dan Stale Response Protection
 
-```text
-AI_PROVIDER=openrouter
-OPENROUTER_API_KEY=<server-only key>
-OPENROUTER_MODEL=openrouter/free
-```
+Form menampilkan card `Saran AI - perlu ditinjau pengguna` dengan tiga tindakan:
 
-Model default OpenRouter adalah `openrouter/free` jika `OPENROUTER_MODEL` tidak diisi. Model ini memakai Free Models Router dari OpenRouter untuk memilih model free yang kompatibel. Integrasi ini memakai Chat Completions API OpenRouter tanpa fitur reasoning vendor, tanpa streaming, dan tanpa menyimpan reasoning.
+1. `Gunakan Saran AI` mengisi tiga faktor risiko tanpa submit otomatis.
+2. `Ubah Nilai` mempertahankan nilai form dan mengarahkan fokus ke input manual.
+3. `Abaikan Saran` membuang suggestion tanpa mengubah form.
 
-## Provider Fallback
+Tombol request disabled ketika loading atau rate-limit countdown aktif. Imperative loading guard mencegah double request. AbortController, request sequence, dan context fingerprint memastikan response lama tidak diterima setelah judul, deskripsi, aset, lokasi, atau nilai risiko berubah.
 
-Jika `AI_PROVIDER` kosong, `none`, tidak valid, API key tidak tersedia, timeout, atau provider gagal, sistem memakai rekomendasi fallback rule-based.
+## Runtime Test
 
-Fallback berdasarkan kategori risiko:
-
-```text
-rendah: Pantau kondisi secara berkala dan dokumentasikan hasil pemeriksaan.
-sedang: Jadwalkan pemeriksaan oleh teknisi atau laboran dan lakukan tindakan pencegahan.
-tinggi: Batasi penggunaan alat atau area sampai dilakukan pemeriksaan dan tindakan perbaikan.
-kritis: Hentikan penggunaan alat atau area sampai diperiksa dan diperbaiki oleh teknisi.
-```
-
-Fallback dapat menambahkan konteks singkat dari judul, aset, dan lokasi, tetapi tidak boleh mengarang fakta teknis yang tidak ada di input.
-
-## Cara Test Tanpa API Key
-
-1. Pastikan `AI_PROVIDER` kosong atau bernilai `none`.
-2. Jalankan aplikasi lokal.
-3. Login sebagai admin.
-4. Buka `/reports/new?assetId=AST-001`.
-5. Isi judul, deskripsi, lokasi, dan nilai risiko.
-6. Pastikan skor risiko tetap berasal dari `severity x probability x exposure`.
-7. Klik `Buat Rekomendasi AI`.
-8. Pastikan rekomendasi fallback muncul dan UI tidak crash.
-9. Submit laporan seperti biasa untuk memastikan alur laporan tetap normal.
-
-Endpoint tetap memerlukan session login dan profil aktif walaupun provider key tidak tersedia. Kegagalan provider akan menghasilkan rekomendasi fallback, bukan melewati autentikasi atau rate limiter.
-
-## Cara Test Dengan Provider
-
-1. Set `AI_PROVIDER` ke `openai`, `gemini`, `deepseek`, atau `openrouter`.
-2. Isi API key provider yang sesuai di environment server.
-3. Jalankan ulang aplikasi agar environment terbaca.
-4. Buka form laporan baru dan klik `Buat Rekomendasi AI`.
-5. Pastikan response `provider` sesuai provider yang dipilih.
-6. Jika provider gagal, pastikan response tetap fallback dan UI tidak crash.
-
-## Cara Test Keamanan dan Rate Limit
-
-1. Review migration `004_ai_endpoint_rate_limit.sql`; jangan jalankan tanpa persetujuan manual.
-2. Setelah migration diterapkan, panggil endpoint tanpa login dan pastikan response `401`.
-3. Login dengan profil inactive dan pastikan response `403`.
-4. Login dengan profil aktif dan kirim request valid; pastikan response `200`.
-5. Kirim total 11 request dalam 60 detik dengan user yang sama.
-6. Pastikan request ke-11 mendapat `429`, `retryAfterSeconds`, dan header `Retry-After`.
-7. Pastikan user aktif lain memiliki counter terpisah.
-8. Setelah 60 detik, pastikan request kembali diterima.
-9. Matikan provider atau gunakan key invalid; pastikan response tetap `200` dengan `provider: fallback` selama kuota tersedia.
-10. Pastikan score dan kategori pada response tidak berubah dari hasil rule-based.
+1. Tanpa login, pastikan endpoint menghasilkan `401`.
+2. Profil inactive dan role `kepala_lab` harus mendapat `403`.
+3. Login sebagai role pembuat laporan dan buka `/reports/new?assetId=AST-001`.
+4. Isi title minimal 3 karakter dan description minimal 10 karakter.
+5. Klik `Analisis Risiko dengan AI`; pastikan card suggestion tampil.
+6. Ubah konteks saat request berlangsung; pastikan response lama tidak tampil.
+7. Double-click tombol; pastikan hanya satu request efektif.
+8. Uji ketiga tindakan review dan pastikan tidak ada submit otomatis.
+9. Terapkan saran 5 x 4 x 5; pastikan score `100` dan category `kritis`.
+10. Ubah nilai sesudah apply lalu submit; pastikan database memakai nilai akhir user.
+11. Pastikan tidak ada metadata AI otomatis pada report.
+12. Uji request ke-11 dalam 60 detik; pastikan `429` dan countdown tampil.
+13. Matikan provider atau gunakan key invalid; pastikan fallback tetap muncul sebagai hasil, bukan error.
+14. Periksa response dan console agar tidak ada secret, raw provider response, atau reasoning metadata.
 
 ## Risiko dan Batasan
 
-- Output AI perlu review manusia sebelum dijadikan keputusan akhir.
-- Provider AI bisa gagal, timeout, atau mengembalikan output yang kurang sesuai.
-- Jangan memasukkan data sensitif berlebihan ke deskripsi laporan atau checklist.
-- Score utama tetap rule-based dan tidak ditentukan oleh provider AI.
-- Rekomendasi AI tidak disimpan otomatis ke database pada D4-14.
+- Output AI tetap memerlukan review manusia dan petugas berwenang.
+- Prompt injection dimitigasi dengan separation, delimiter, minimisasi data, dan output validation, tetapi output tetap tidak boleh dianggap keputusan otomatis.
+- Rate limiting fixed-window membatasi quota per user, bukan mendeteksi seluruh pola penyalahgunaan.
+- Kategori bahaya belum menjadi data report tersimpan pada Phase 2.
