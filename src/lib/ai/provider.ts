@@ -13,7 +13,42 @@ import {
 type ConfiguredProvider = Exclude<AIRecommendationProvider, "fallback">;
 
 const REQUEST_TIMEOUT_MS = 10_000;
+const DEFAULT_GEMINI_TIMEOUT_MS = 30_000;
+const MIN_GEMINI_TIMEOUT_MS = 5_000;
+const MAX_GEMINI_TIMEOUT_MS = 60_000;
 const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
+
+type GeminiDiagnosticCategory =
+  | "gemini_http_error"
+  | "gemini_timeout"
+  | "gemini_empty_response"
+  | "gemini_invalid_output";
+
+function logGeminiDiagnostic(
+  category: GeminiDiagnosticCategory,
+  details: { model: string; status?: number; timeoutMs?: number },
+) {
+  console.error("[AI Risk Recommendation] Gemini provider failed", {
+    category,
+    ...details,
+  });
+}
+
+function configuredGeminiModel(): string {
+  return process.env.GEMINI_MODEL?.trim() || "gemini-3.1-flash-lite";
+}
+
+function configuredGeminiTimeoutMs(): number {
+  const configuredTimeout = Number(
+    process.env.GEMINI_TIMEOUT_MS?.trim() ?? "",
+  );
+
+  return Number.isInteger(configuredTimeout) &&
+    configuredTimeout >= MIN_GEMINI_TIMEOUT_MS &&
+    configuredTimeout <= MAX_GEMINI_TIMEOUT_MS
+    ? configuredTimeout
+    : DEFAULT_GEMINI_TIMEOUT_MS;
+}
 
 function configuredProvider(): ConfiguredProvider | null {
   const provider = process.env.AI_PROVIDER?.trim().toLowerCase();
@@ -32,9 +67,10 @@ function configuredProvider(): ConfiguredProvider | null {
 async function fetchWithTimeout(
   input: RequestInfo | URL,
   init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(input, { ...init, signal: controller.signal });
@@ -327,28 +363,63 @@ async function generateOpenRouter(prompt: RiskSuggestionPrompt): Promise<string>
 async function generateGemini(prompt: RiskSuggestionPrompt): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+  const geminiModel = configuredGeminiModel();
+  const geminiTimeoutMs = configuredGeminiTimeoutMs();
 
-  const response = await fetchWithTimeout(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: {
-          parts: [{ text: prompt.systemInstruction }],
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
         },
-        contents: [{ parts: [{ text: prompt.userData }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 240,
-        },
-      }),
-    },
-  );
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: prompt.systemInstruction }],
+          },
+          contents: [{ parts: [{ text: prompt.userData }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 240,
+          },
+        }),
+      },
+      geminiTimeoutMs,
+    );
+  } catch (error) {
+    logGeminiDiagnostic(
+      error instanceof Error && error.name === "AbortError"
+        ? "gemini_timeout"
+        : "gemini_http_error",
+      {
+        model: geminiModel,
+        ...(error instanceof Error && error.name === "AbortError"
+          ? { timeoutMs: geminiTimeoutMs }
+          : {}),
+      },
+    );
+    throw new Error("Gemini provider request failed.");
+  }
 
-  if (!response.ok) throw new Error(`Gemini request failed: ${response.status}`);
+  if (!response.ok) {
+    logGeminiDiagnostic("gemini_http_error", {
+      model: geminiModel,
+      status: response.status,
+    });
+    throw new Error("Gemini provider request failed.");
+  }
+
   const text = extractGeminiText(await readJson(response));
-  if (!text) throw new Error("Gemini response did not include text.");
+  if (!text) {
+    logGeminiDiagnostic("gemini_empty_response", {
+      model: geminiModel,
+      status: response.status,
+    });
+    throw new Error("Gemini provider returned an empty response.");
+  }
   return text;
 }
 
@@ -377,6 +448,12 @@ export async function generateRiskRecommendation(
     );
     const payload = parseJsonObjectFromText(text);
     const suggestion = buildProviderRiskSuggestion(input, provider, payload);
+
+    if (!suggestion && provider === "gemini") {
+      logGeminiDiagnostic("gemini_invalid_output", {
+        model: configuredGeminiModel(),
+      });
+    }
 
     return suggestion ?? fallback;
   } catch (error) {

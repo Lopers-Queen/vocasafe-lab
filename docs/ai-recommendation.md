@@ -120,12 +120,25 @@ Provider diminta mengembalikan JSON terstruktur tanpa markdown, reasoning, `reas
 AI_PROVIDER=
 OPENAI_API_KEY=
 GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_TIMEOUT_MS=30000
 DEEPSEEK_API_KEY=
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openrouter/free
 ```
 
 API key wajib server-only dan tidak boleh memakai prefix `NEXT_PUBLIC_`. Jika provider kosong, key tidak tersedia, timeout, response invalid, atau provider gagal, API mengembalikan fallback rule-based dengan HTTP `200` selama autentikasi dan quota valid.
+
+Untuk memakai Google Gemini sebagai provider utama, konfigurasi environment server sebagai berikut:
+
+```text
+AI_PROVIDER=gemini
+GEMINI_API_KEY=<server-only key>
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_TIMEOUT_MS=30000
+```
+
+`gemini-3.1-flash-lite` direkomendasikan untuk analisis risiko singkat dan structured suggestion VocaSafe Lab. `GEMINI_MODEL` tetap opsional dan memakai model tersebut sebagai default jika env kosong. `GEMINI_TIMEOUT_MS` juga opsional, menggunakan default `30000` ms dan hanya menerima integer antara `5000` sampai `60000` ms. Request mempertahankan system instruction terpisah dari data pengguna, tidak meminta atau mengirim `reasoning` maupun `reasoning_details`, dan otomatis beralih ke rekomendasi rule-based jika key/model tidak tersedia, timeout, response kosong, atau output provider tidak valid.
 
 ## Error Contract
 
