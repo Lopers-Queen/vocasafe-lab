@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -21,13 +21,106 @@ import {
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import { getReportEvidenceBucket } from "@/lib/storage";
 
-type AIRecommendationProvider = "fallback" | "openai" | "gemini" | "deepseek";
+type AIRecommendationProvider =
+  | "fallback"
+  | "openai"
+  | "gemini"
+  | "deepseek"
+  | "openrouter";
 
-interface AIRecommendationResponse {
-  recommendation: string;
+type HazardCategory =
+  | "listrik"
+  | "mekanik"
+  | "kebakaran"
+  | "bahan_kimia"
+  | "ergonomi"
+  | "fasilitas_k3"
+  | "lingkungan"
+  | "lainnya";
+
+interface AIRiskSuggestionResponse {
   provider: AIRecommendationProvider;
-  riskScore: number;
-  riskCategory: string;
+  hazardCategory: HazardCategory;
+  suggestedSeverity: number;
+  suggestedProbability: number;
+  suggestedExposure: number;
+  suggestedRiskScore: number;
+  suggestedRiskCategory: "rendah" | "sedang" | "tinggi" | "kritis";
+  recommendation: string;
+  shortRationale: string;
+}
+
+type AIReviewDecision = "pending" | "applied" | "manual";
+
+const AI_PROVIDERS = new Set<AIRecommendationProvider>([
+  "fallback",
+  "openai",
+  "gemini",
+  "deepseek",
+  "openrouter",
+]);
+const HAZARD_CATEGORIES = new Set<HazardCategory>([
+  "listrik",
+  "mekanik",
+  "kebakaran",
+  "bahan_kimia",
+  "ergonomi",
+  "fasilitas_k3",
+  "lingkungan",
+  "lainnya",
+]);
+const hazardCategoryLabels: Record<HazardCategory, string> = {
+  listrik: "Listrik",
+  mekanik: "Mekanik",
+  kebakaran: "Kebakaran",
+  bahan_kimia: "Bahan Kimia",
+  ergonomi: "Ergonomi",
+  fasilitas_k3: "Fasilitas K3",
+  lingkungan: "Lingkungan",
+  lainnya: "Lainnya",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isScaleValue(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 5
+  );
+}
+
+function isAiSuggestionResponse(value: unknown): value is AIRiskSuggestionResponse {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.provider !== "string" ||
+    !AI_PROVIDERS.has(value.provider as AIRecommendationProvider) ||
+    typeof value.hazardCategory !== "string" ||
+    !HAZARD_CATEGORIES.has(value.hazardCategory as HazardCategory) ||
+    !isScaleValue(value.suggestedSeverity) ||
+    !isScaleValue(value.suggestedProbability) ||
+    !isScaleValue(value.suggestedExposure) ||
+    typeof value.recommendation !== "string" ||
+    !value.recommendation.trim() ||
+    typeof value.shortRationale !== "string" ||
+    !value.shortRationale.trim()
+  ) {
+    return false;
+  }
+
+  const risk = calculateRiskScore({
+    severity: value.suggestedSeverity,
+    probability: value.suggestedProbability,
+    exposure: value.suggestedExposure,
+  });
+
+  return (
+    value.suggestedRiskScore === risk.score &&
+    value.suggestedRiskCategory === risk.category
+  );
 }
 
 function NewReportFallback() {
@@ -67,10 +160,17 @@ function NewReportPage() {
   const [submitting, setSubmitting] = useState(false);
   const [createdReportId, setCreatedReportId] = useState("");
   const [attachmentWarning, setAttachmentWarning] = useState("");
-  const [aiRecommendation, setAiRecommendation] = useState("");
-  const [aiProvider, setAiProvider] = useState<AIRecommendationProvider | "">("");
+  const [aiSuggestion, setAiSuggestion] =
+    useState<AIRiskSuggestionResponse | null>(null);
+  const [aiReviewDecision, setAiReviewDecision] =
+    useState<AIReviewDecision | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState("");
+  const [aiRetrySeconds, setAiRetrySeconds] = useState(0);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
+  const aiRequestSequenceRef = useRef(0);
+  const aiContextFingerprintRef = useRef("");
+  const aiLoadingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -110,76 +210,202 @@ function NewReportPage() {
     };
   }, [presetAsset]);
 
+  useEffect(() => {
+    return () => {
+      aiRequestSequenceRef.current += 1;
+      aiAbortControllerRef.current?.abort();
+      aiAbortControllerRef.current = null;
+      aiLoadingRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (aiRetrySeconds <= 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setAiRetrySeconds((current) => Math.max(0, current - 1));
+    }, 1000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [aiRetrySeconds]);
+
   const selectedAsset =
     assets.find((asset) => asset.id === selectedAssetId) ?? null;
   const previewRisk = calculateRiskScore({ severity, probability, exposure });
+  const aiContextFingerprint = JSON.stringify({
+    title: title.trim(),
+    description: description.trim(),
+    assetId: selectedAsset?.id ?? null,
+    assetName: selectedAsset?.name ?? null,
+    location: location.trim(),
+    severity,
+    probability,
+    exposure,
+  });
 
-  function clearAiState() {
-    setAiRecommendation("");
-    setAiProvider("");
+  useEffect(() => {
+    aiContextFingerprintRef.current = aiContextFingerprint;
+  }, [aiContextFingerprint]);
+
+  function clearAiPresentation() {
+    setAiSuggestion(null);
+    setAiReviewDecision(null);
     setAiError("");
+  }
+
+  function invalidateAiState() {
+    aiRequestSequenceRef.current += 1;
+    aiAbortControllerRef.current?.abort();
+    aiAbortControllerRef.current = null;
+    aiLoadingRef.current = false;
+    setAiLoading(false);
+    clearAiPresentation();
   }
 
   function handleAssetChange(assetId: string) {
     setSelectedAssetId(assetId);
     setError("");
-    clearAiState();
+    invalidateAiState();
     const asset = assets.find((item) => item.id === assetId);
     setLocation(asset?.location ?? asset?.laboratory?.location ?? "");
   }
 
   async function handleGenerateAiRecommendation() {
+    if (aiLoading) return;
+    if (aiLoadingRef.current || aiRetrySeconds > 0) return;
+
     setError("");
     setAiError("");
-    setAiRecommendation("");
-    setAiProvider("");
+    setAiSuggestion(null);
+    setAiReviewDecision(null);
 
-    if (!title.trim() || !description.trim() || !location.trim()) {
-      setAiError("Isi judul, deskripsi, dan lokasi sebelum membuat rekomendasi AI.");
+    if (
+      !selectedAsset ||
+      title.trim().length < 3 ||
+      description.trim().length < 10 ||
+      !location.trim()
+    ) {
+      setAiError("Data laporan belum memenuhi syarat untuk dianalisis.");
       return;
     }
 
+    const requestSequence = aiRequestSequenceRef.current + 1;
+    aiRequestSequenceRef.current = requestSequence;
+    const requestFingerprint = aiContextFingerprint;
+    const controller = new AbortController();
+    aiAbortControllerRef.current = controller;
+    aiLoadingRef.current = true;
     setAiLoading(true);
 
     try {
       const response = await fetch("/api/ai/risk-recommendation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           source: "report",
-          title,
-          description,
-          assetName: selectedAsset?.name ?? null,
-          location,
-          severity,
-          probability,
-          exposure,
-          riskScore: previewRisk.score,
-          riskCategory: previewRisk.category,
+          title: title.trim(),
+          description: description.trim(),
+          assetName: selectedAsset.name,
+          location: location.trim(),
+          currentSeverity: severity,
+          currentProbability: probability,
+          currentExposure: exposure,
         }),
       });
 
-      const data = (await response.json()) as Partial<AIRecommendationResponse> & {
-        error?: string;
-      };
+      const data: unknown = await response.json().catch(() => null);
+
+      if (
+        controller.signal.aborted ||
+        requestSequence !== aiRequestSequenceRef.current ||
+        requestFingerprint !== aiContextFingerprintRef.current
+      ) {
+        return;
+      }
 
       if (!response.ok) {
-        setAiError(data.error ?? "Rekomendasi AI gagal dibuat.");
+        if (response.status === 400) {
+          setAiError("Data laporan belum memenuhi syarat untuk dianalisis.");
+        } else if (response.status === 401) {
+          setAiError("Sesi login berakhir. Silakan masuk kembali.");
+        } else if (response.status === 403) {
+          setAiError("Akun ini tidak memiliki akses untuk menggunakan analisis AI.");
+        } else if (response.status === 429) {
+          const bodyRetry =
+            isRecord(data) && typeof data.retryAfterSeconds === "number"
+              ? data.retryAfterSeconds
+              : Number.NaN;
+          const headerRetry = Number(response.headers.get("Retry-After"));
+          const retrySeconds = Math.min(
+            3600,
+            Math.max(
+              1,
+              Math.ceil(
+                Number.isFinite(bodyRetry)
+                  ? bodyRetry
+                  : Number.isFinite(headerRetry)
+                    ? headerRetry
+                    : 60,
+              ),
+            ),
+          );
+          setAiRetrySeconds(retrySeconds);
+          setAiError("");
+        } else {
+          setAiError("Layanan analisis AI sedang tidak tersedia.");
+        }
         return;
       }
 
-      if (!data.recommendation || !data.provider) {
-        setAiError("Response rekomendasi AI tidak lengkap.");
+      if (!isAiSuggestionResponse(data)) {
+        setAiError("Layanan analisis AI sedang tidak tersedia.");
         return;
       }
 
-      setAiRecommendation(data.recommendation);
-      setAiProvider(data.provider);
-    } catch {
-      setAiError("Rekomendasi AI gagal dibuat. Coba lagi nanti.");
+      setAiSuggestion(data);
+      setAiReviewDecision("pending");
+    } catch (requestError) {
+      if (
+        controller.signal.aborted ||
+        (requestError instanceof DOMException && requestError.name === "AbortError")
+      ) {
+        return;
+      }
+
+      if (requestSequence === aiRequestSequenceRef.current) {
+        setAiError("Layanan analisis AI sedang tidak tersedia.");
+      }
     } finally {
-      setAiLoading(false);
+      if (requestSequence === aiRequestSequenceRef.current) {
+        aiAbortControllerRef.current = null;
+        aiLoadingRef.current = false;
+        setAiLoading(false);
+      }
     }
+  }
+
+  function handleApplyAiSuggestion() {
+    if (!aiSuggestion) return;
+    setSeverity(aiSuggestion.suggestedSeverity);
+    setProbability(aiSuggestion.suggestedProbability);
+    setExposure(aiSuggestion.suggestedExposure);
+    setAiReviewDecision("applied");
+    setAiError("");
+  }
+
+  function handleManualAiReview() {
+    if (!aiSuggestion) return;
+    setAiReviewDecision("manual");
+    window.requestAnimationFrame(() => {
+      const severityInput = document.getElementById("severity");
+      severityInput?.scrollIntoView({ behavior: "smooth", block: "center" });
+      severityInput?.focus();
+    });
+  }
+
+  function handleIgnoreAiSuggestion() {
+    invalidateAiState();
   }
 
   function handleEvidenceChange(file: File | null, input: HTMLInputElement) {
@@ -271,9 +497,7 @@ function NewReportPage() {
     setError("");
     setAttachmentWarning("");
     setCreatedReportId("");
-    setAiRecommendation("");
-    setAiProvider("");
-    setAiError("");
+    invalidateAiState();
   }
 
   if (createdReportId) {
@@ -402,8 +626,10 @@ function NewReportPage() {
                 value={title}
                 onChange={(event) => {
                   setTitle(event.target.value);
-                  clearAiState();
+                  invalidateAiState();
                 }}
+                minLength={3}
+                maxLength={160}
                 placeholder="Contoh: Kabel mesin bor terkelupas"
                 required
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
@@ -422,8 +648,10 @@ function NewReportPage() {
                 value={description}
                 onChange={(event) => {
                   setDescription(event.target.value);
-                  clearAiState();
+                  invalidateAiState();
                 }}
+                minLength={10}
+                maxLength={1200}
                 rows={4}
                 placeholder="Jelaskan detail bahaya yang ditemukan..."
                 required
@@ -444,8 +672,9 @@ function NewReportPage() {
                 value={location}
                 onChange={(event) => {
                   setLocation(event.target.value);
-                  clearAiState();
+                  invalidateAiState();
                 }}
+                maxLength={160}
                 required
                 className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
               />
@@ -468,7 +697,7 @@ function NewReportPage() {
                   value={severity}
                   onChange={(event) => {
                     setSeverity(Number(event.target.value));
-                    clearAiState();
+                    invalidateAiState();
                   }}
                   className="w-full accent-emerald-600"
                 />
@@ -485,7 +714,7 @@ function NewReportPage() {
                   value={probability}
                   onChange={(event) => {
                     setProbability(Number(event.target.value));
-                    clearAiState();
+                    invalidateAiState();
                   }}
                   className="w-full accent-emerald-600"
                 />
@@ -502,7 +731,7 @@ function NewReportPage() {
                   value={exposure}
                   onChange={(event) => {
                     setExposure(Number(event.target.value));
-                    clearAiState();
+                    invalidateAiState();
                   }}
                   className="w-full accent-emerald-600"
                 />
@@ -536,24 +765,27 @@ function NewReportPage() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-emerald-950">
-                    Rekomendasi AI-Assisted
+                    Analisis Risiko dengan AI
                   </h3>
                   <p className="mt-1 text-xs text-emerald-800">
-                    Membantu menyusun tindak lanjut tanpa mengubah skor risiko utama.
+                    AI hanya memberi saran. Nilai akhir tetap dipilih dan ditinjau
+                    pengguna.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleGenerateAiRecommendation}
-                  disabled={aiLoading || submitting}
+                  disabled={aiLoading || aiRetrySeconds > 0 || submitting}
                   className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
                 >
                   {aiLoading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Membuat...
+                      <Loader2 className="h-4 w-4 animate-spin" /> Menganalisis...
                     </>
+                  ) : aiRetrySeconds > 0 ? (
+                    `Coba lagi dalam ${aiRetrySeconds} detik`
                   ) : (
-                    "Buat Rekomendasi AI"
+                    "Analisis Risiko dengan AI"
                   )}
                 </button>
               </div>
@@ -564,14 +796,119 @@ function NewReportPage() {
                 </p>
               )}
 
-              {aiRecommendation && (
-                <div className="mt-4 rounded-md border border-emerald-200 bg-white p-3">
-                  <p className="text-sm text-slate-700">{aiRecommendation}</p>
-                  {aiProvider === "fallback" && (
-                    <p className="mt-2 text-xs text-amber-700">
-                      Rekomendasi fallback digunakan karena provider AI tidak tersedia.
+              {aiRetrySeconds > 0 && (
+                <p role="alert" className="mt-3 text-sm text-amber-800">
+                  Batas penggunaan AI tercapai. Coba kembali dalam {aiRetrySeconds} detik.
+                </p>
+              )}
+
+              {aiSuggestion && (
+                <div className="mt-4 space-y-4 rounded-md border border-emerald-200 bg-white p-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-900">
+                      Saran AI - perlu ditinjau pengguna
+                    </h4>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
+                        Provider: {aiSuggestion.provider}
+                      </span>
+                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-800">
+                        Saran kategori bahaya: {hazardCategoryLabels[aiSuggestion.hazardCategory]}
+                      </span>
+                      {aiSuggestion.provider === "fallback" && (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 font-medium text-amber-800">
+                          Fallback sistem
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Kategori bahaya ini hanya saran dan tidak disimpan ke laporan.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <div className="rounded-md bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Severity</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {aiSuggestion.suggestedSeverity}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Probability</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {aiSuggestion.suggestedProbability}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Exposure</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {aiSuggestion.suggestedExposure}
+                      </p>
+                    </div>
+                    <div className="rounded-md bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Skor Saran</p>
+                      <p className="text-lg font-semibold text-slate-900">
+                        {aiSuggestion.suggestedRiskScore}
+                      </p>
+                      <p className="text-xs capitalize text-slate-500">
+                        {aiSuggestion.suggestedRiskCategory}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Rekomendasi tindakan awal
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {aiSuggestion.recommendation}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Alasan singkat
+                      </p>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {aiSuggestion.shortRationale}
+                      </p>
+                    </div>
+                  </div>
+
+                  {aiReviewDecision === "applied" && (
+                    <p role="status" className="rounded-md bg-emerald-50 p-2 text-xs text-emerald-800">
+                      Saran telah dimasukkan ke field risiko. Anda tetap dapat mengubah nilainya.
                     </p>
                   )}
+                  {aiReviewDecision === "manual" && (
+                    <p role="status" className="rounded-md bg-blue-50 p-2 text-xs text-blue-800">
+                      Anda memilih review manual. Nilai form saat ini tetap dipertahankan.
+                    </p>
+                  )}
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={handleApplyAiSuggestion}
+                      className="inline-flex min-h-10 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    >
+                      Gunakan Saran AI
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleManualAiReview}
+                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                    >
+                      Ubah Nilai
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleIgnoreAiSuggestion}
+                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Abaikan Saran
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

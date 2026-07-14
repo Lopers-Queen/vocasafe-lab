@@ -1,12 +1,13 @@
 import "server-only";
 
 import {
-  buildFallbackRiskRecommendation,
-  buildRiskRecommendationPrompt,
-  normalizeProviderRecommendation,
+  buildFallbackRiskSuggestion,
+  buildProviderRiskSuggestion,
+  buildRiskSuggestionPrompt,
+  type AIRiskSuggestionResult,
   type AIRecommendationProvider,
-  type AIRecommendationResult,
-  type RiskRecommendationInput,
+  type RiskSuggestionInput,
+  type RiskSuggestionPrompt,
 } from "@/lib/ai/risk-recommendation";
 
 type ConfiguredProvider = Exclude<AIRecommendationProvider, "fallback">;
@@ -70,6 +71,26 @@ function extractOpenAiText(payload: unknown): string | null {
 
 function normalizeText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function parseJsonObjectFromText(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  const withoutFence = trimmed
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+  const firstBrace = withoutFence.indexOf("{");
+  const lastBrace = withoutFence.lastIndexOf("}");
+  const candidate =
+    firstBrace >= 0 && lastBrace > firstBrace
+      ? withoutFence.slice(firstBrace, lastBrace + 1)
+      : withoutFence;
+
+  try {
+    return asRecord(JSON.parse(candidate));
+  } catch {
+    return null;
+  }
 }
 
 function extractTextFromContentParts(value: unknown): string | null {
@@ -160,7 +181,7 @@ function extractOpenRouterText(payload: unknown): string | null {
 }
 
 async function requestOpenRouterText(
-  prompt: string,
+  prompt: RiskSuggestionPrompt,
   model: string,
 ): Promise<string | null> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -182,10 +203,9 @@ async function requestOpenRouterText(
         messages: [
           {
             role: "system",
-            content:
-              "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
+            content: prompt.systemInstruction,
           },
-          { role: "user", content: prompt },
+          { role: "user", content: prompt.userData },
         ],
         temperature: 0.3,
         max_tokens: 300,
@@ -231,7 +251,7 @@ function extractGeminiText(payload: unknown): string | null {
   return typeof firstPart?.text === "string" ? firstPart.text : null;
 }
 
-async function generateOpenAi(prompt: string): Promise<string> {
+async function generateOpenAi(prompt: RiskSuggestionPrompt): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
 
@@ -246,10 +266,9 @@ async function generateOpenAi(prompt: string): Promise<string> {
       messages: [
         {
           role: "system",
-          content:
-            "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
+          content: prompt.systemInstruction,
         },
-        { role: "user", content: prompt },
+        { role: "user", content: prompt.userData },
       ],
       temperature: 0.2,
       max_tokens: 240,
@@ -262,7 +281,7 @@ async function generateOpenAi(prompt: string): Promise<string> {
   return text;
 }
 
-async function generateDeepSeek(prompt: string): Promise<string> {
+async function generateDeepSeek(prompt: RiskSuggestionPrompt): Promise<string> {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured.");
 
@@ -277,10 +296,9 @@ async function generateDeepSeek(prompt: string): Promise<string> {
       messages: [
         {
           role: "system",
-          content:
-            "Anda memberi rekomendasi K3 singkat. Jangan mengubah skor risiko.",
+          content: prompt.systemInstruction,
         },
-        { role: "user", content: prompt },
+        { role: "user", content: prompt.userData },
       ],
       temperature: 0.2,
       max_tokens: 240,
@@ -293,7 +311,7 @@ async function generateDeepSeek(prompt: string): Promise<string> {
   return text;
 }
 
-async function generateOpenRouter(prompt: string): Promise<string> {
+async function generateOpenRouter(prompt: RiskSuggestionPrompt): Promise<string> {
   const model = process.env.OPENROUTER_MODEL?.trim() || DEFAULT_OPENROUTER_MODEL;
   const text =
     (await requestOpenRouterText(prompt, model)) ??
@@ -306,7 +324,7 @@ async function generateOpenRouter(prompt: string): Promise<string> {
   return text;
 }
 
-async function generateGemini(prompt: string): Promise<string> {
+async function generateGemini(prompt: RiskSuggestionPrompt): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
 
@@ -316,7 +334,10 @@ async function generateGemini(prompt: string): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: {
+          parts: [{ text: prompt.systemInstruction }],
+        },
+        contents: [{ parts: [{ text: prompt.userData }] }],
         generationConfig: {
           temperature: 0.2,
           maxOutputTokens: 240,
@@ -333,7 +354,7 @@ async function generateGemini(prompt: string): Promise<string> {
 
 async function generateWithProvider(
   provider: ConfiguredProvider,
-  prompt: string,
+  prompt: RiskSuggestionPrompt,
 ): Promise<string> {
   if (provider === "openai") return generateOpenAi(prompt);
   if (provider === "gemini") return generateGemini(prompt);
@@ -342,26 +363,22 @@ async function generateWithProvider(
 }
 
 export async function generateRiskRecommendation(
-  input: RiskRecommendationInput,
-): Promise<AIRecommendationResult> {
-  const fallback = buildFallbackRiskRecommendation(input);
+  input: RiskSuggestionInput,
+): Promise<AIRiskSuggestionResult> {
+  const fallback = buildFallbackRiskSuggestion(input);
   const provider = configuredProvider();
 
   if (!provider) return fallback;
 
   try {
-    const recommendation = normalizeProviderRecommendation(
-      await generateWithProvider(provider, buildRiskRecommendationPrompt(input)),
-    );
-
-    if (!recommendation) return fallback;
-
-    return {
-      recommendation,
+    const text = await generateWithProvider(
       provider,
-      riskScore: input.riskScore,
-      riskCategory: input.riskCategory,
-    };
+      buildRiskSuggestionPrompt(input),
+    );
+    const payload = parseJsonObjectFromText(text);
+    const suggestion = buildProviderRiskSuggestion(input, provider, payload);
+
+    return suggestion ?? fallback;
   } catch (error) {
     console.error("[AI Risk Recommendation] provider failed", error);
     return fallback;
